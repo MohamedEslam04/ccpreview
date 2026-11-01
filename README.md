@@ -213,4 +213,4 @@ Marsad is an independent project and is not affiliated with or endorsed by Anthr
 
 ---
 
-Docs synced to commit 92198e5 ("copy(info): describe permission modes and effort levels instead of repeating their names", 2026-11-01).
+Docs synced to commit 8bfc34e ("chore: 0.1.1", 2026-11-01).
