@@ -8,6 +8,10 @@ ccpreview (short for Claude Code preview) reads the transcripts Claude Code alre
 npx ccpreview
 ```
 
+[![A 3-minute demo: Claude Code in the terminal next to ccpreview in the browser, Arabic that reads right, and the image viewer](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/media/demo-poster.jpg)](https://mohamedeslam04.github.io/ccpreview/demo.mp4)
+
+The demo shows Claude Code running in a terminal while ccpreview follows it live in a browser tab, a waiting question, a prompt in Arabic and English (broken in the terminal, readable in ccpreview), and the image viewer, filters and notes pad.
+
 ![Two Claude Code sessions side by side in ccpreview: a live session with its subagents, task list and an answered question, next to a plan-mode session](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/screenshots/hero.png)
 
 ## Who it's for
@@ -195,6 +199,8 @@ npm test           # node:test, no dependencies
 
 ccpreview بيوريك Claude Code بيعمل إيه دلوقتي، في المتصفح. بيقرا ملفات الـ transcripts اللي Claude Code بيكتبها في `~/.claude/projects` ويعرضها وهي بتتحدّث، من غير ما يكلّم Claude ومن غير ما يرفع أي حاجة.
 
+[شوف الفيديو (٣ دقايق)](https://mohamedeslam04.github.io/ccpreview/demo.mp4): Claude Code في التيرمينال وccpreview جنبه في المتصفح، وبرومبت عربي بيطلع مكسّر في التيرمينال ومقروء صح في ccpreview.
+
 - **متابعة لحظة بلحظة:** كل السيشنز متقسمة حسب المشروع أو اليوم، فلاتر (شغالة، مستنياك، مفتوحة، متثبتة، تاريخ)، لحد 4 سيشنز جنب بعض، وإشعار لما سيشن تخلص أو تستناك ترد.
 - **تقرا اللي حصل:** الرسايل بالـ markdown والجداول، الأوامر متجمعة في كل دور، الـ diffs بتاعة الملفات، الخطة وقايمة المهام متثبتين فوق، كروت أسئلة `AskUserQuestion` والإجابة اللي اخترتها، وبحث جوه السيشن بيفهم العربي.
 - **الـ subagents:** شريط لكل سيشن فيه كل agent ومهمته وحالته، وتفتح الـ transcript بتاعه بضغطة.
@@ -220,4 +226,4 @@ ccpreview is an independent project and is not affiliated with or endorsed by An
 
 ---
 
-Docs synced to commit 7420f14 ("feat(onboarding): guide covers old browsers, WSL, hidden folders and CLAUDE_CONFIG_DIR; picking the home folder also works", 2026-11-01).
+Docs synced to commit 311a0f6 ("fix(viewer): show a waiting question once when the transcript already has it", 2026-11-01).

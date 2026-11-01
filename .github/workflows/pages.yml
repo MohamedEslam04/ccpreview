@@ -23,8 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # the site is web/ plus the demo video (kept out of web/ so it never ships in the npm package)
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp -R web/. _site/
+          cp docs/media/ccpreview-demo.mp4 _site/demo.mp4
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
