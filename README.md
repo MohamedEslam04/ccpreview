@@ -8,9 +8,9 @@ ccpreview (short for Claude Code preview) reads the transcripts Claude Code alre
 npx ccpreview
 ```
 
-[![A 3-minute demo: Claude Code in the terminal next to ccpreview in the browser, Arabic that reads right, and the image viewer](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/media/demo-poster.jpg)](https://mohamedeslam04.github.io/ccpreview/demo.mp4)
+[![Claude Code in the terminal next to ccpreview in the browser: the new session shows up by itself and a waiting question is answered in the terminal](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/media/demo-teaser.gif)](https://mohamedeslam04.github.io/ccpreview/demo.mp4)
 
-The demo shows Claude Code running in a terminal while ccpreview follows it live in a browser tab, a waiting question, a prompt in Arabic and English (broken in the terminal, readable in ccpreview), and the image viewer, filters and notes pad.
+[Watch the full 3-minute demo](https://mohamedeslam04.github.io/ccpreview/demo.mp4). It shows Claude Code running in a terminal while ccpreview follows it live in a browser tab, a waiting question, a prompt in Arabic and English (broken in the terminal, readable in ccpreview), and the image viewer, filters and notes pad.
 
 ![Two Claude Code sessions side by side in ccpreview: a live session with its subagents, task list and an answered question, next to a plan-mode session](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/screenshots/hero.png)
 
