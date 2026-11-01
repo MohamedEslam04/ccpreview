@@ -148,12 +148,20 @@
           const text = dropImageMarks(cleanPrompt(textOf(c)));
           if (text || images.length) out.push({ k: text.startsWith('<') ? 'note' : 'user', text, ts, images: images.length ? images : undefined });
         }
+        // working folder / git branch over time, for the info panel (added last: the check above relies on out.length)
+        if (o.cwd) out.push({ k: 'ctx', cwd: o.cwd, branch: o.gitBranch || '', ts });
         return out;
       }
       case 'assistant': {
         const c = o.message && o.message.content;
         if (!Array.isArray(c)) return [];
         const out = [];
+        // token usage + model for the session info panel (one API message spans several lines; the UI dedupes by id)
+        const u = o.message.usage;
+        if (u && o.message.id) {
+          out.push({ k: 'usage', mid: o.message.id, model: o.message.model || '', ts,
+            u: { i: u.input_tokens || 0, o: u.output_tokens || 0, cr: u.cache_read_input_tokens || 0, cw: u.cache_creation_input_tokens || 0 } });
+        }
         for (const b of c) {
           if (!b) continue;
           if (b.type === 'text' && b.text && b.text.trim()) out.push({ k: 'text', text: b.text, ts });
@@ -237,6 +245,8 @@
           id: a.id, mtime: a.mtime, born: a.born,
           description: (a.info && a.info.description) || '', type: (a.info && a.info.agentType) || '',
           model: (a.info && a.info.model) || '', toolUseId: (a.info && a.info.toolUseId) || '', finished: !!(a.info && a.info.finished),
+          worktree: (a.info && a.info.worktreePath) || '', worktreeBranch: (a.info && a.info.worktreeBranch) || '',
+          background: !!(a.info && a.info.requestShape === 'background'),
         })).sort((a, b) => a.born - b.born);
         const active = Math.max(f.mtime, ...agents.map((a) => a.mtime));
         sessions.push({ id: f.id, mtime: f.mtime, size: f.size, active, title: m.title || m.prompt, cwd: m.cwd, agents, state: m.state || 'idle' });
