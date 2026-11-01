@@ -10,7 +10,9 @@ const hookInstall = require('../lib/hook-install.js');
 const HOOK = path.join(__dirname, '..', 'lib', 'hook.js');
 const BIN = path.join(__dirname, '..', 'bin', 'ccpreview.js');
 const mkHome = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ccpreview-hook-'));
-const envFor = (home) => ({ ...process.env, HOME: home, USERPROFILE: home });
+// CLAUDE_CONFIG_DIR is cleared so a developer's own setting can never point a test at their real settings.json
+delete process.env.CLAUDE_CONFIG_DIR;
+const envFor = (home) => ({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: '' });
 const pendingFile = (home, id) => path.join(home, '.ccpreview', 'pending', id + '.json');
 
 // ---------- the hook script ----------
@@ -209,4 +211,16 @@ test('cli: ccpreview hook install / status / uninstall against a temp HOME', () 
 test('cli: -h documents the hook command', () => {
   const r = spawnSync(process.execPath, [BIN, '-h'], { encoding: 'utf8' });
   assert.match(r.stdout, /ccpreview hook install/);
+});
+
+test('paths: CLAUDE_CONFIG_DIR moves settings.json, ~ is expanded, empty means default', () => {
+  const { claudeDir } = require('../lib/paths');
+  const home = path.join(os.tmpdir(), 'h');
+  assert.strictEqual(claudeDir({}, home), path.join(home, '.claude'));
+  assert.strictEqual(claudeDir({ CLAUDE_CONFIG_DIR: '  ' }, home), path.join(home, '.claude'));
+  assert.strictEqual(claudeDir({ CLAUDE_CONFIG_DIR: '~/cfg' }, home), path.join(home, 'cfg'));
+  const abs = path.join(os.tmpdir(), 'elsewhere');
+  assert.strictEqual(claudeDir({ CLAUDE_CONFIG_DIR: abs }, home), abs);
+  const { paths } = require('../lib/hook-install');
+  assert.strictEqual(paths(home, { CLAUDE_CONFIG_DIR: abs }).settings, path.join(abs, 'settings.json'));
 });

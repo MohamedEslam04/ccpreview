@@ -4,6 +4,7 @@
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
+const { claudeDir } = require('../lib/paths');
 const pkg = require('../package.json');
 
 const HELP = `ccpreview ${pkg.version}
@@ -13,7 +14,7 @@ Usage: ccpreview [options]
        ccpreview hook <install|uninstall|status>
 
   -p, --port <n>       port to listen on (default 4747; 0 picks a free one)
-      --projects <dir> Claude Code projects folder (default ~/.claude/projects)
+      --projects <dir> Claude Code projects folder (default ~/.claude/projects, or $CLAUDE_CONFIG_DIR/projects)
       --data <dir>     where ccpreview keeps your notes pages (default ~/.ccpreview)
       --no-open        don't open the browser
   -v, --version        print the version
@@ -106,6 +107,6 @@ app.server.on('error', (e) => {
 app.listen(opts.port, (port) => {
   const url = `http://127.0.0.1:${port}/`;
   console.log(`ccpreview ${pkg.version} → ${url}`);
-  console.log(`Reading ${opts.projects || path.join(os.homedir(), '.claude', 'projects')}`);
+  console.log(`Reading ${opts.projects || path.join(claudeDir(), 'projects')}`);
   if (opts.open && !activated) openBrowser(url);
 });
