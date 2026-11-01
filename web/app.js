@@ -1479,7 +1479,7 @@ class Pane {
       '<button class="icon-btn" data-s="list" data-i18n-title="pane.hit_list"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>' +
       `<button class="icon-btn" data-s="close" data-i18n-title="pane.search_close">${ICON.x}</button>` +
       '</div><div class="ps-list" hidden></div></div>' +
-      '<div class="pmain"><div class="pscroll"><div class="ppin" hidden></div><div class="pbody page"></div></div>' +
+      '<div class="pmain"><div class="pscroll"><div class="ppin" hidden></div><div class="pbody page"></div><div class="pwait" hidden></div></div>' +
       '<nav class="prail" data-i18n-aria-label="rail.aria"><div class="rail-nav">' +
       '<button class="icon-btn" data-nav="first" data-i18n-title="rail.first"><svg viewBox="0 0 24 24"><path d="M6 11l6-6 6 6M6 18l6-6 6 6"/></svg></button>' +
       '<button class="icon-btn" data-nav="prev" data-i18n-title="rail.prev"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>' +
@@ -1706,6 +1706,8 @@ class Pane {
 
   reset() {
     this.stats = newStats();
+    this.waiting = null;
+    if (this.el) this.renderWait();
     if (this.el) this.renderInfo();
     this.tools = {};
     this.group = null;
@@ -2124,6 +2126,29 @@ class Pane {
     box.querySelector('details').addEventListener('toggle', (e) => { ui.pinOpen = e.target.open; saveUi(); });
   }
 
+  // A question / plan Claude is waiting on right now (server mode with the optional hook; the
+  // transcript only gets it once answered). Folder mode never receives one.
+  renderWait(stick) {
+    const box = this.q('.pwait');
+    const w = this.waiting;
+    box.hidden = !w;
+    if (!w) { box.innerHTML = ''; return; }
+    const plan = w.tool === 'ExitPlanMode';
+    let h = `<div class="pw-head"><span class="pw-dot"></span><b>${t(plan ? 'wait.plan' : 'wait.question')}</b><small>${t('wait.terminal')} · ${hhmm(new Date(w.at).toISOString())}</small></div>`;
+    const input = w.input || {};
+    if (plan) h += `<div class="pw-plan">${md(String(input.plan || ''))}</div>`;
+    else {
+      for (const q of Array.isArray(input.questions) ? input.questions : []) {
+        const qd = textDir([q.question, ...(q.options || []).map((o) => o.label)].join(' '));
+        h += `<div class="pw-q" dir="${qd === 'auto' ? 'rtl' : qd}">${q.header ? `<span class="ask-chip">${esc(q.header)}</span>` : ''}<div class="pw-qt" dir="${textDir(q.question)}">${esc(q.question || '')}</div>` +
+          (q.multiSelect ? `<small>${t('wait.multi')}</small>` : '') +
+          `<ol class="pw-opts">${(q.options || []).map((o) => `<li><b dir="${textDir(o.label)}">${esc(o.label || '')}</b>${o.description ? `<span dir="${textDir(o.description)}">${esc(o.description)}</span>` : ''}</li>`).join('')}</ol></div>`;
+      }
+    }
+    box.innerHTML = h;
+    if (stick && !this.restoring) this.scroll.scrollTop = this.scroll.scrollHeight;
+  }
+
   toolGroup(frag) {
     if (this.group) return this.group;
     const g = document.createElement('details');
@@ -2146,6 +2171,7 @@ class Pane {
       let el = null;
       trackStats(this.stats, ev);
       if (ev.k === 'usage' || ev.k === 'ctx') return; // stats only, nothing to draw
+      if (ev.k === 'pending') { this.waiting = ev.p; this.renderWait(wasBottom); return; }
       if (ev.k === 'title') {
         if (!this.key.agent) { this.title = ev.text; this.q('.ptitle').textContent = ev.text; persistPanes(); }
         return;
