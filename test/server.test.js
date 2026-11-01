@@ -25,7 +25,7 @@ function request(method, reqPath, { headers = {}, body } = {}) {
 }
 
 test.before(async () => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'marsad-test-'));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ccpreview-test-'));
   const projects = path.join(tmp, 'projects');
   const dir = path.join(projects, '-home-me-demo');
   fs.mkdirSync(dir, { recursive: true });
@@ -71,7 +71,7 @@ test('GET /api/info', async () => {
   const r = await request('GET', '/api/info');
   assert.strictEqual(r.status, 200);
   const info = JSON.parse(r.text);
-  assert.strictEqual(info.app, 'marsad');
+  assert.strictEqual(info.app, 'ccpreview');
   assert.strictEqual(info.version, '9.9.9');
   assert.strictEqual(info.mode, 'server');
   assert.strictEqual(info.service, false);

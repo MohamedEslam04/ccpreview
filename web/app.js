@@ -1,12 +1,12 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 const ed = $('ed'), thumbs = $('thumbs');
-// Where sessions come from: the local `marsad` server, or a folder you pick in the browser (see source.js)
-const SRC = MarsadSource.create();
+// Where sessions come from: the local `ccpreview` server, or a folder you pick in the browser (see source.js)
+const SRC = CCPreviewSource.create();
 const SERVER = SRC.mode === 'server';
 let sourceState = 'loading'; // ready | offline | needs-folder | needs-permission | unsupported
-const LS_PAGES = 'marsad.pages.v1'; // notes pages (the only store in folder mode, a backup in server mode)
-const LS_UI = 'marsad.ui.v1';       // per-browser UI state: tab, open panes, widths, scroll
+const LS_PAGES = 'ccpreview.pages.v1'; // notes pages (the only store in folder mode, a backup in server mode)
+const LS_UI = 'ccpreview.ui.v1';       // per-browser UI state: tab, open panes, widths, scroll
 // Language first: the markup is translated before the setup below reads it.
 (function () {
   let l;
@@ -967,7 +967,7 @@ async function loadSessions() {
 
 // What the sidebar shows when there is nothing to read yet.
 function connectHtml() {
-  const npx = '<code dir="ltr">npx marsad</code>';
+  const npx = '<code dir="ltr">npx ccpreview</code>';
   if (SERVER) return `<div class="empty">${t('connect.stopped')}<br><br><button class="btn primary" data-start>${t('srv.start')}</button><p class="connect-hint">${t('connect.stopped_hint', { cmd: npx })}</p></div>`;
   if (sourceState === 'unsupported') {
     return `<div class="empty connect"><b>${t('connect.unsupported')}</b>` +
@@ -2640,7 +2640,7 @@ function lbShow(scope, i) {
   $('lbTitle').textContent = a.dataset.from || '';
   $('lbOpen').href = url;
   $('lbDownload').href = url;
-  $('lbDownload').setAttribute('download', `marsad-image-${lb.i + 1}`);
+  $('lbDownload').setAttribute('download', `ccpreview-image-${lb.i + 1}`);
   lb.blob = null;
   $('lbInfo').hidden = !ui.lbInfo; // keep the properties panel as you left it
   box.classList.toggle('info', !!ui.lbInfo);
@@ -2813,7 +2813,7 @@ function checkTransitions() {
     else if (s.state === 'asking') notify(p, s, t('state.asking'));
   }));
   prevStates = states;
-  document.title = waiting ? `(${waiting}) Marsad` : 'Marsad';
+  document.title = waiting ? `(${waiting}) ccpreview` : 'ccpreview';
 }
 function notify(p, s, what) {
   if (!ui.notify || !('Notification' in window) || Notification.permission !== 'granted') return;

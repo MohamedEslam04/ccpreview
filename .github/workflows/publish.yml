@@ -3,8 +3,8 @@ name: Publish to npm
 # Release: bump "version" in package.json, commit, then push a matching tag:
 #   git tag v0.1.2 && git push origin v0.1.2
 # Auth is npm trusted publishing (OIDC): no npm token is stored in this repo.
-# One-time setup on npmjs.com: package marsad > Settings > Trusted publisher >
-# GitHub Actions, user MohamedEslam04, repo marsad, workflow publish.yml.
+# One-time setup on npmjs.com: package ccpreview > Settings > Trusted publisher >
+# GitHub Actions, user MohamedEslam04, repo ccpreview, workflow publish.yml.
 
 on:
   push:
@@ -46,8 +46,8 @@ jobs:
         id: check
         run: |
           v="$(node -p "require('./package.json').version")"
-          if npm view "marsad@$v" version >/dev/null 2>&1; then
-            echo "marsad@$v is already published, nothing to do"
+          if npm view "ccpreview@$v" version >/dev/null 2>&1; then
+            echo "ccpreview@$v is already published, nothing to do"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 

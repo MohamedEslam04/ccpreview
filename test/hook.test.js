@@ -8,10 +8,10 @@ const { spawnSync } = require('child_process');
 const hookInstall = require('../lib/hook-install.js');
 
 const HOOK = path.join(__dirname, '..', 'lib', 'hook.js');
-const BIN = path.join(__dirname, '..', 'bin', 'marsad.js');
-const mkHome = () => fs.mkdtempSync(path.join(os.tmpdir(), 'marsad-hook-'));
+const BIN = path.join(__dirname, '..', 'bin', 'ccpreview.js');
+const mkHome = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ccpreview-hook-'));
 const envFor = (home) => ({ ...process.env, HOME: home, USERPROFILE: home });
-const pendingFile = (home, id) => path.join(home, '.marsad', 'pending', id + '.json');
+const pendingFile = (home, id) => path.join(home, '.ccpreview', 'pending', id + '.json');
 
 // ---------- the hook script ----------
 function runHook(home, payload, raw) {
@@ -66,13 +66,13 @@ test('hook: bad input never fails, prints nothing and cannot escape the pending 
     assert.strictEqual(r.status, 0);
     assert.strictEqual(r.stdout, '');
   }
-  assert.ok(!fs.existsSync(path.join(home, '.marsad', 'evil.json')));
+  assert.ok(!fs.existsSync(path.join(home, '.ccpreview', 'evil.json')));
   assert.ok(!fs.existsSync(path.join(home, 'evil.json')));
 });
 
 // ---------- installer ----------
 const settingsOf = (home) => path.join(home, '.claude', 'settings.json');
-const scriptOf = (home) => path.join(home, '.marsad', 'hooks', 'pending-ask.js');
+const scriptOf = (home) => path.join(home, '.ccpreview', 'hooks', 'pending-ask.js');
 const readSettings = (home) => JSON.parse(fs.readFileSync(settingsOf(home), 'utf8'));
 function writeSettings(home, obj, text) {
   fs.mkdirSync(path.dirname(settingsOf(home)), { recursive: true });
@@ -111,14 +111,14 @@ test('install: adds only its own entries next to other hooks and keeps every oth
   // the stable copy of the hook script exists and is the same file
   assert.strictEqual(fs.readFileSync(scriptOf(home), 'utf8'), fs.readFileSync(HOOK, 'utf8'));
   // a backup of the previous settings sits next to settings.json
-  assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsOf(home) + '.marsad-bak', 'utf8')), other());
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(settingsOf(home) + '.ccpreview-bak', 'utf8')), other());
 });
 
 test('install: creates settings.json when there is none, and is idempotent', () => {
   const home = mkHome();
   assert.strictEqual(hookInstall.install({ home }).changed, true);
   const first = fs.readFileSync(settingsOf(home), 'utf8');
-  assert.ok(!fs.existsSync(settingsOf(home) + '.marsad-bak'), 'nothing to back up');
+  assert.ok(!fs.existsSync(settingsOf(home) + '.ccpreview-bak'), 'nothing to back up');
   assert.strictEqual(hookInstall.install({ home }).changed, false);
   assert.strictEqual(fs.readFileSync(settingsOf(home), 'utf8'), first);
   assert.strictEqual(ownCmds(readSettings(home)).length, 5);
@@ -188,7 +188,7 @@ test('status: reports not installed, installed and partly installed', () => {
 });
 
 // ---------- CLI ----------
-test('cli: marsad hook install / status / uninstall against a temp HOME', () => {
+test('cli: ccpreview hook install / status / uninstall against a temp HOME', () => {
   const home = mkHome();
   const run = (...a) => spawnSync(process.execPath, [BIN, 'hook', ...a], { env: envFor(home), encoding: 'utf8' });
   assert.match(run('status').stdout, /not installed/i);
@@ -208,5 +208,5 @@ test('cli: marsad hook install / status / uninstall against a temp HOME', () => 
 
 test('cli: -h documents the hook command', () => {
   const r = spawnSync(process.execPath, [BIN, '-h'], { encoding: 'utf8' });
-  assert.match(r.stdout, /marsad hook install/);
+  assert.match(r.stdout, /ccpreview hook install/);
 });

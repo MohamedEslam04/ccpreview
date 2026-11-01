@@ -1,7 +1,7 @@
 /*
- * Where Marsad gets sessions from.
+ * Where ccpreview gets sessions from.
  *
- *  - ServerSource: the page is served by `npx marsad` on 127.0.0.1; sessions come from its API.
+ *  - ServerSource: the page is served by `npx ccpreview` on 127.0.0.1; sessions come from its API.
  *  - FolderSource: the page is on the web (e.g. GitHub Pages); you pick ~/.claude/projects once and
  *    the browser reads it directly (File System Access API, Chrome / Edge). Nothing is uploaded.
  *
@@ -14,7 +14,7 @@
  */
 (function () {
   'use strict';
-  const core = window.MarsadCore;
+  const core = window.CCPreviewCore;
   const isLocalServer = location.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(location.hostname) && !!location.port;
 
   // ---------------------------------------------------------------- server
@@ -55,7 +55,7 @@
   }
 
   // ---------------------------------------------------------------- folder (File System Access API)
-  const IDB_NAME = 'marsad', IDB_STORE = 'handles';
+  const IDB_NAME = 'ccpreview', IDB_STORE = 'handles';
   function idb(mode, fn) {
     return new Promise((resolve, reject) => {
       const open = indexedDB.open(IDB_NAME, 1);
@@ -124,7 +124,7 @@
       this.use(this.pending);
     }
     async pick() {
-      let h = await window.showDirectoryPicker({ id: 'marsad-projects', mode: 'read' });
+      let h = await window.showDirectoryPicker({ id: 'ccpreview-projects', mode: 'read' });
       // picked ~/.claude (or anything holding a "projects" folder): step into it
       if (!(await hasJsonlChild(h))) {
         try {
@@ -226,7 +226,7 @@
       };
     }
 
-    // a web page cannot run git: that needs `npx marsad`
+    // a web page cannot run git: that needs `npx ccpreview`
     async git() { return { unsupported: true }; }
 
     // list scans never overlap (the meta cache is not re-entrant)
@@ -265,7 +265,7 @@
     }
   }
 
-  window.MarsadSource = {
+  window.CCPreviewSource = {
     isLocalServer,
     create: () => (isLocalServer ? new ServerSource() : new FolderSource()),
   };

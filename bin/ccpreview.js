@@ -1,31 +1,31 @@
 #!/usr/bin/env node
 'use strict';
-// marsad: watch your Claude Code sessions live in the browser.
+// ccpreview: watch your Claude Code sessions live in the browser.
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const pkg = require('../package.json');
 
-const HELP = `marsad ${pkg.version}
+const HELP = `ccpreview ${pkg.version}
 Watch your Claude Code sessions live in the browser. Everything stays on this machine.
 
-Usage: marsad [options]
-       marsad hook <install|uninstall|status>
+Usage: ccpreview [options]
+       ccpreview hook <install|uninstall|status>
 
   -p, --port <n>       port to listen on (default 4747; 0 picks a free one)
       --projects <dir> Claude Code projects folder (default ~/.claude/projects)
-      --data <dir>     where Marsad keeps your notes pages (default ~/.marsad)
+      --data <dir>     where ccpreview keeps your notes pages (default ~/.ccpreview)
       --no-open        don't open the browser
   -v, --version        print the version
   -h, --help           show this help
 
 Optional: see a question while it waits (Claude Code only writes it to the transcript after you answer):
 
-  marsad hook install    add Marsad's own entries to ~/.claude/settings.json (backup kept next to it)
-  marsad hook uninstall  remove only those entries
-  marsad hook status     show whether the hook is installed and where
+  ccpreview hook install    add ccpreview's own entries to ~/.claude/settings.json (backup kept next to it)
+  ccpreview hook uninstall  remove only those entries
+  ccpreview hook status     show whether the hook is installed and where
 
-Marsad only listens on 127.0.0.1.`;
+ccpreview only listens on 127.0.0.1.`;
 
 function parse(argv) {
   const o = { port: 4747, open: true };
@@ -50,14 +50,14 @@ function parse(argv) {
 }
 
 function fail(msg) {
-  console.error(`marsad: ${msg}\n\n${HELP}`);
+  console.error(`ccpreview: ${msg}\n\n${HELP}`);
   process.exit(2);
 }
 
 function hookCommand(args) {
   const hook = require('../lib/hook-install.js');
   const sub = args[0];
-  if (!['install', 'uninstall', 'status'].includes(sub) || args.length > 1) fail('usage: marsad hook <install|uninstall|status>');
+  if (!['install', 'uninstall', 'status'].includes(sub) || args.length > 1) fail('usage: ccpreview hook <install|uninstall|status>');
   try {
     if (sub === 'install') {
       const r = hook.install();
@@ -67,15 +67,15 @@ function hookCommand(args) {
       console.log('Restart Claude Code sessions (or open /hooks once) so they pick it up.');
     } else if (sub === 'uninstall') {
       const r = hook.uninstall();
-      console.log(r.changed ? `Removed Marsad's entries (${r.removed.join(', ') || 'none in settings'}) and the hook script.` : 'Nothing to remove: the hook is not installed.');
+      console.log(r.changed ? `Removed ccpreview's entries (${r.removed.join(', ') || 'none in settings'}) and the hook script.` : 'Nothing to remove: the hook is not installed.');
     } else {
       const r = hook.status();
-      if (r.state === 'not-installed') console.log('Pending-question hook: not installed (run: marsad hook install)');
-      else console.log(`Pending-question hook: ${r.state === 'installed' ? 'installed' : `partly installed, missing ${r.missing.join(', ')} (run: marsad hook install)`}\nSettings: ${r.settings}\nScript:   ${r.script}${r.scriptExists ? '' : ' (missing, run: marsad hook install)'}`);
+      if (r.state === 'not-installed') console.log('Pending-question hook: not installed (run: ccpreview hook install)');
+      else console.log(`Pending-question hook: ${r.state === 'installed' ? 'installed' : `partly installed, missing ${r.missing.join(', ')} (run: ccpreview hook install)`}\nSettings: ${r.settings}\nScript:   ${r.script}${r.scriptExists ? '' : ' (missing, run: ccpreview hook install)'}`);
     }
   } catch (e) {
     if (!(e instanceof hook.HookError)) throw e;
-    console.error(`marsad: ${e.message}`);
+    console.error(`ccpreview: ${e.message}`);
     process.exit(1);
   }
 }
@@ -98,14 +98,14 @@ const activated = process.env.LISTEN_FDS === '1' && Number(process.env.LISTEN_PI
 const app = createServer({ projects: opts.projects, dataDir: opts.dataDir, version: pkg.version, activated });
 
 app.server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE') fail(`port ${opts.port} is busy. Is Marsad already running? Try --port 0`);
+  if (e.code === 'EADDRINUSE') fail(`port ${opts.port} is busy. Is ccpreview already running? Try --port 0`);
   console.error(e);
   process.exit(1);
 });
 
 app.listen(opts.port, (port) => {
   const url = `http://127.0.0.1:${port}/`;
-  console.log(`Marsad ${pkg.version} → ${url}`);
+  console.log(`ccpreview ${pkg.version} → ${url}`);
   console.log(`Reading ${opts.projects || path.join(os.homedir(), '.claude', 'projects')}`);
   if (opts.open && !activated) openBrowser(url);
 });

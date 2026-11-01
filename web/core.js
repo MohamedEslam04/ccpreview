@@ -1,8 +1,8 @@
 /*
- * Marsad core: turns Claude Code transcript files (~/.claude/projects/<project>/<session>.jsonl)
+ * ccpreview core: turns Claude Code transcript files (~/.claude/projects/<project>/<session>.jsonl)
  * into compact events for the UI, and builds the session list.
  *
- * Runs unchanged in Node (the `marsad` local server) and in the browser (folder mode, where the
+ * Runs unchanged in Node (the `ccpreview` local server) and in the browser (folder mode, where the
  * page reads the folder itself through the File System Access API). Anything environment-specific
  * comes in through an adapter:
  *
@@ -16,7 +16,7 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.MarsadCore = factory();
+  else root.CCPreviewCore = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 

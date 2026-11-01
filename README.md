@@ -1,14 +1,14 @@
-# Marsad
+# ccpreview
 
 **See what Claude Code is doing, live, in your browser.**
 
-Marsad (مرصد, Arabic for "observatory") reads the transcripts Claude Code already writes to `~/.claude/projects` and turns them into a readable, searchable view: every session, its messages, tool calls, file diffs, subagents, plans, questions and token use, updating as Claude works. It runs on your machine, never talks to Claude, and never uploads anything.
+ccpreview (short for Claude Code preview) reads the transcripts Claude Code already writes to `~/.claude/projects` and turns them into a readable, searchable view: every session, its messages, tool calls, file diffs, subagents, plans, questions and token use, updating as Claude works. It runs on your machine, never talks to Claude, and never uploads anything.
 
 ```sh
-npx marsad
+npx ccpreview
 ```
 
-![Two Claude Code sessions side by side in Marsad: a live session with its subagents, task list and an answered question, next to a plan-mode session](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/hero.png)
+![Two Claude Code sessions side by side in ccpreview: a live session with its subagents, task list and an answered question, next to a plan-mode session](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/screenshots/hero.png)
 
 ## Who it's for
 
@@ -34,7 +34,7 @@ npx marsad
 - A message rail to jump between your messages, and keys to step through them.
 - Search inside a session: Arabic-aware matching, regex, whole word, and a scope selector (everything, your messages, Claude's replies, tool calls).
 
-![A file diff and the subagent calls inside a turn](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/diff.png)
+![A file diff and the subagent calls inside a turn](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/screenshots/diff.png)
 
 ### Subagents
 - A subagents bar per session: each agent's task, type and state (running, done, stopped), and one click to open its own transcript.
@@ -45,10 +45,10 @@ Press `i` or the info button for a panel with:
 - **Context now**: how much of the context window the latest request used, and when the conversation was last compacted.
 - **Mode and effort**: the permission mode (`auto`, `plan`, ...) and the effort level.
 - **Billed tokens**: input, output, cache reads and cache writes over all requests.
-- **Git** (with `npx marsad`): branch, unpushed commits, staged, modified and untracked files, and the last commit.
+- **Git** (with `npx ccpreview`): branch, unpushed commits, staged, modified and untracked files, and the last commit.
 - Model, duration, folder, tool counts and the files the session changed (click one to jump to its last edit).
 
-![The session info panel: context size, mode and effort, tokens and git status](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/info.png)
+![The session info panel: context size, mode and effort, tokens and git status](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/screenshots/info.png)
 
 ### Images
 - A viewer with zoom (wheel, `+` `-`, double-click), drag to pan, fit and actual size, image properties, copy, and a thumbnail strip with a hover preview of every image in the session.
@@ -58,7 +58,7 @@ Press `i` or the info button for a panel with:
 - Each paragraph and line takes the direction of the language most of it is written in, so a line of English inside an Arabic message reads left to right, and the other way round.
 - Light and dark themes.
 
-![Marsad in Arabic with the dark theme](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/arabic-dark.png)
+![ccpreview in Arabic with the dark theme](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/screenshots/arabic-dark.png)
 
 ### Notes pad
 - Pages with thumbnails for keeping notes next to your sessions. Pasting a terminal box-drawing table or markdown turns it into a real table.
@@ -68,14 +68,14 @@ Press `i` or the info button for a panel with:
 ### With npx (every browser)
 
 ```sh
-npx marsad
+npx ccpreview
 ```
 
 This starts a server on `http://127.0.0.1:4747`, opens it in your browser and reads `~/.claude/projects`. Needs Node 18 or newer.
 
 ### Hosted page (Chrome, Edge)
 
-Open <https://mohamedeslam04.github.io/marsad/> and pick your `~/.claude/projects` folder once. The browser reads the files directly through the File System Access API. The page remembers the folder and asks for read permission again when needed.
+Open <https://mohamedeslam04.github.io/ccpreview/> and pick your `~/.claude/projects` folder once. The browser reads the files directly through the File System Access API. The page remembers the folder and asks for read permission again when needed.
 
 `~/.claude` is a hidden folder, so the picker may not show it:
 
@@ -83,9 +83,9 @@ Open <https://mohamedeslam04.github.io/marsad/> and pick your `~/.claude/project
 - macOS: press `Cmd+Shift+.`.
 - Windows: paste `%USERPROFILE%\.claude\projects` into the picker's address bar.
 
-If you pick `~/.claude` instead of `~/.claude/projects`, Marsad steps into `projects` for you.
+If you pick `~/.claude` instead of `~/.claude/projects`, ccpreview steps into `projects` for you.
 
-Firefox and Safari do not support folder access. Use `npx marsad` there.
+Firefox and Safari do not support folder access. Use `npx ccpreview` there.
 
 ## Privacy and security
 
@@ -95,18 +95,18 @@ Firefox and Safari do not support folder access. Use `npx marsad` there.
 - Session ids and folder names are validated against a strict pattern, so `..` and hidden folders are rejected. Static files come from a fixed list.
 - Nothing is uploaded. There is no analytics, no telemetry and no external request, in either mode.
 - Folder mode requests read-only access. The hosted page never writes to your folder.
-- Notes are stored in `~/.marsad/pages.json` in server mode (with daily backups in `~/.marsad/backups`, the last 14 kept) and in the browser's `localStorage` in folder mode.
-- The optional hook (off unless you run `marsad hook install`) writes only under `~/.marsad` and to your `settings.json`, as described above.
+- Notes are stored in `~/.ccpreview/pages.json` in server mode (with daily backups in `~/.ccpreview/backups`, the last 14 kept) and in the browser's `localStorage` in folder mode.
+- The optional hook (off unless you run `ccpreview hook install`) writes only under `~/.ccpreview` and to your `settings.json`, as described above.
 - Transcripts can contain secrets and source code. Do not expose the server to a network.
 
 ## CLI options
 
 ```
-marsad [options]
+ccpreview [options]
 
   -p, --port <n>       port to listen on (default 4747; 0 picks a free one)
       --projects <dir> Claude Code projects folder (default ~/.claude/projects)
-      --data <dir>     where Marsad keeps your notes pages (default ~/.marsad)
+      --data <dir>     where ccpreview keeps your notes pages (default ~/.ccpreview)
       --no-open        don't open the browser
   -v, --version        print the version
   -h, --help           show this help
@@ -114,24 +114,24 @@ marsad [options]
 
 ## Optional: start on login
 
-On Linux, systemd socket activation starts Marsad the first time you open `http://127.0.0.1:4747/` and costs nothing while idle. See [docs/systemd](https://github.com/MohamedEslam04/marsad/tree/main/docs/systemd) for the unit files and setup.
+On Linux, systemd socket activation starts ccpreview the first time you open `http://127.0.0.1:4747/` and costs nothing while idle. See [docs/systemd](https://github.com/MohamedEslam04/ccpreview/tree/main/docs/systemd) for the unit files and setup.
 
 ## Optional: see questions while they wait
 
-Claude Code writes a question (`AskUserQuestion`) or a plan to approve (`ExitPlanMode`) to the transcript only after you answer it, so a viewer cannot show one that is still waiting. A small Claude Code hook can. It is off by default and Marsad works the same without it.
+Claude Code writes a question (`AskUserQuestion`) or a plan to approve (`ExitPlanMode`) to the transcript only after you answer it, so a viewer cannot show one that is still waiting. A small Claude Code hook can. It is off by default and ccpreview works the same without it.
 
 ```sh
-npx marsad hook install     # add the hook
-npx marsad hook status      # installed or not, and where
-npx marsad hook uninstall   # remove it
+npx ccpreview hook install     # add the hook
+npx ccpreview hook status      # installed or not, and where
+npx ccpreview hook uninstall   # remove it
 ```
 
 With the hook, a waiting question or plan appears as a card at the end of the session, the session shows as "Waiting for you" in the sidebar, and the card disappears once you answer in the terminal. Answering still happens in the terminal.
 
-- `install` only adds its own entries to `~/.claude/settings.json` (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop` and `UserPromptSubmit`). Every other setting and hook is left as it is. It is safe to run twice, keeps a backup next to the file as `settings.json.marsad-bak`, and refuses to touch a `settings.json` that is not valid JSON.
+- `install` only adds its own entries to `~/.claude/settings.json` (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop` and `UserPromptSubmit`). Every other setting and hook is left as it is. It is safe to run twice, keeps a backup next to the file as `settings.json.ccpreview-bak`, and refuses to touch a `settings.json` that is not valid JSON.
 - `uninstall` removes only those entries, and the empty lists they leave behind.
-- The hook script is copied to `~/.marsad/hooks/pending-ask.js`, and waiting questions are stored in `~/.marsad/pending/<session>.json` (private to your user, deleted when answered, ignored after 12 hours). Nothing is written inside `~/.claude` except your `settings.json`. The hook prints nothing and never blocks Claude Code. With `--data`, Marsad reads `<dir>/pending`, so keep the default if you use the hook.
-- The hosted page cannot read `~/.marsad`, so it shows nothing extra. This needs `npx marsad`.
+- The hook script is copied to `~/.ccpreview/hooks/pending-ask.js`, and waiting questions are stored in `~/.ccpreview/pending/<session>.json` (private to your user, deleted when answered, ignored after 12 hours). Nothing is written inside `~/.claude` except your `settings.json`. The hook prints nothing and never blocks Claude Code. With `--data`, ccpreview reads `<dir>/pending`, so keep the default if you use the hook.
+- The hosted page cannot read `~/.ccpreview`, so it shows nothing extra. This needs `npx ccpreview`.
 
 ## Keyboard shortcuts
 
@@ -155,12 +155,12 @@ With the hook, a waiting question or plan appears as a card at the end of the se
 
 ## Browser support
 
-| Browser | `npx marsad` | Hosted page (folder mode) |
+| Browser | `npx ccpreview` | Hosted page (folder mode) |
 | --- | --- | --- |
 | Chrome, Edge | Yes | Yes |
 | Brave | Yes | Needs `brave://flags/#file-system-access-api` enabled |
-| Firefox | Yes | No, use `npx marsad` |
-| Safari | Yes | No, use `npx marsad` |
+| Firefox | Yes | No, use `npx ccpreview` |
+| Safari | Yes | No, use `npx ccpreview` |
 
 ## How it works
 
@@ -176,9 +176,9 @@ With the hook, a waiting question or plan appears as a card at the end of the se
 ## Development
 
 ```sh
-git clone https://github.com/MohamedEslam04/marsad.git
-cd marsad
-npm start          # runs bin/marsad.js on :4747
+git clone https://github.com/MohamedEslam04/ccpreview.git
+cd ccpreview
+npm start          # runs bin/ccpreview.js on :4747
 npm test           # node:test, no dependencies
 ```
 
@@ -186,26 +186,26 @@ npm test           # node:test, no dependencies
 
 ## بالعربي
 
-مرصد بيوريك Claude Code بيعمل إيه دلوقتي، في المتصفح. بيقرا ملفات الـ transcripts اللي Claude Code بيكتبها في `~/.claude/projects` ويعرضها وهي بتتحدّث، من غير ما يكلّم Claude ومن غير ما يرفع أي حاجة.
+ccpreview بيوريك Claude Code بيعمل إيه دلوقتي، في المتصفح. بيقرا ملفات الـ transcripts اللي Claude Code بيكتبها في `~/.claude/projects` ويعرضها وهي بتتحدّث، من غير ما يكلّم Claude ومن غير ما يرفع أي حاجة.
 
 - **متابعة لحظة بلحظة:** كل السيشنز متقسمة حسب المشروع أو اليوم، فلاتر (شغالة، مستنياك، مفتوحة، متثبتة، تاريخ)، لحد 4 سيشنز جنب بعض، وإشعار لما سيشن تخلص أو تستناك ترد.
 - **تقرا اللي حصل:** الرسايل بالـ markdown والجداول، الأوامر متجمعة في كل دور، الـ diffs بتاعة الملفات، الخطة وقايمة المهام متثبتين فوق، كروت أسئلة `AskUserQuestion` والإجابة اللي اخترتها، وبحث جوه السيشن بيفهم العربي.
 - **الـ subagents:** شريط لكل سيشن فيه كل agent ومهمته وحالته، وتفتح الـ transcript بتاعه بضغطة.
-- **معلومات السيشن (زرار `i`):** الكونتكست دلوقتي ونسبته من الشباك وآخر ضغط، المود والإيفورت، التوكنز المتحاسبة، وحالة git (الفرع، الـ commits اللي لسه ما اترفعتش، الملفات المتعدّلة) مع `npx marsad`.
+- **معلومات السيشن (زرار `i`):** الكونتكست دلوقتي ونسبته من الشباك وآخر ضغط، المود والإيفورت، التوكنز المتحاسبة، وحالة git (الفرع، الـ commits اللي لسه ما اترفعتش، الملفات المتعدّلة) مع `npx ccpreview`.
 - **الصور:** عارض فيه زوم وسحب وخصائص الصورة وشريط مصغّرات بمعاينة لما تقف عليها.
 - **عربي صح:** الواجهة عربي وإنجليزي، وكل سطر بياخد اتجاه اللغة الغالبة فيه، فاللي مكتوب إنجليزي بيتقري من الشمال واللي عربي من اليمين. فاتح وغامق.
-- **سؤال مستنيك (اختياري):** لو ركّبت الـ hook بـ `npx marsad hook install` (و`uninstall` و`status`) بيظهر السؤال أو الخطة وهي لسه مستنياك، مش بعد ما تجاوب. بيضيف سطوره بس في `~/.claude/settings.json` ومبيلمسش حاجة تانية، ومحتاج `npx marsad` (الصفحة المستضافة مبتشوفوش).
+- **سؤال مستنيك (اختياري):** لو ركّبت الـ hook بـ `npx ccpreview hook install` (و`uninstall` و`status`) بيظهر السؤال أو الخطة وهي لسه مستنياك، مش بعد ما تجاوب. بيضيف سطوره بس في `~/.claude/settings.json` ومبيلمسش حاجة تانية، ومحتاج `npx ccpreview` (الصفحة المستضافة مبتشوفوش).
 - **صفحة ملاحظات:** صفحات بمصغّرات، ولو لزقت جدول من التيرمينال أو markdown بيتحوّل لجدول حقيقي.
 
 التشغيل:
 
-- `npx marsad` وبعدين افتح `http://127.0.0.1:4747`. بيشتغل في كل المتصفحات ومحتاج Node 18 أو أحدث.
-- من غير تثبيت: افتح <https://mohamedeslam04.github.io/marsad/> واختار فولدر `~/.claude/projects` مرة واحدة (Chrome أو Edge). لو الفولدر مستخبي: `Ctrl+H` على لينكس، `Cmd+Shift+.` على ماك. حالة git محتاجة `npx marsad`.
-- الخصوصية: مفيش حاجة بتترفع لأي مكان. السيرفر على `127.0.0.1` بس، والوصول للفولدر قراية بس. الملاحظات في `~/.marsad/pages.json` (السيرفر) أو في `localStorage` (الفولدر).
+- `npx ccpreview` وبعدين افتح `http://127.0.0.1:4747`. بيشتغل في كل المتصفحات ومحتاج Node 18 أو أحدث.
+- من غير تثبيت: افتح <https://mohamedeslam04.github.io/ccpreview/> واختار فولدر `~/.claude/projects` مرة واحدة (Chrome أو Edge). لو الفولدر مستخبي: `Ctrl+H` على لينكس، `Cmd+Shift+.` على ماك. حالة git محتاجة `npx ccpreview`.
+- الخصوصية: مفيش حاجة بتترفع لأي مكان. السيرفر على `127.0.0.1` بس، والوصول للفولدر قراية بس. الملاحظات في `~/.ccpreview/pages.json` (السيرفر) أو في `localStorage` (الفولدر).
 
 ## Disclaimer
 
-Marsad is an independent project and is not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic. The transcript format is undocumented and can change between Claude Code releases, so parts of Marsad may break after an update.
+ccpreview is an independent project and is not affiliated with or endorsed by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic. The transcript format is undocumented and can change between Claude Code releases, so parts of ccpreview may break after an update.
 
 ## License
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=ccpreview (Claude Code session viewer)
+Requires=ccpreview.socket
+After=ccpreview.socket
+
+[Service]
+Type=simple
+# Use an absolute path to node and to the ccpreview script. See README.md in this folder.
+ExecStart=/usr/bin/env ccpreview --no-open
+# Alternative without a global install:
+# ExecStart=/usr/bin/env npx --yes ccpreview --no-open

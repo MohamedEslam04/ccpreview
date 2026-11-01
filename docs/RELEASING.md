@@ -5,9 +5,9 @@ Releases go to npm from GitHub Actions ([publish.yml](../.github/workflows/publi
 ## One-time setup
 
 1. The package must exist on npm before a trusted publisher can be added, so the very first version is published by hand: `npm publish --access public`.
-2. On npmjs.com open the `marsad` package, then **Settings > Trusted publisher > GitHub Actions**, and enter:
+2. On npmjs.com open the `ccpreview` package, then **Settings > Trusted publisher > GitHub Actions**, and enter:
    - Organization or user: `MohamedEslam04`
-   - Repository: `marsad`
+   - Repository: `ccpreview`
    - Workflow filename: `publish.yml`
    - Allow `npm publish`.
 3. Optional, recommended: in the same settings page, set publishing access to require 2FA and disallow tokens, so only the workflow (or you with 2FA) can publish.
