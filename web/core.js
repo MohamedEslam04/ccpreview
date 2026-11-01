@@ -125,8 +125,8 @@
         // a message sent while Claude was working; with a pasted image it's a content-block list, not a string
         if (a.type === 'queued_command' && (typeof a.prompt === 'string' || Array.isArray(a.prompt))) {
           const images = imagesOf(a.prompt, storeImage);
-          const text = dropImageMarks(cleanPrompt(textOf(a.prompt)));
-          return text || images.length ? [{ k: 'user', text, ts, queued: true, images: images.length ? images : undefined }] : [];
+          const { tasks, rest: text } = takeTasks(dropImageMarks(cleanPrompt(textOf(a.prompt))), ts);
+          return tasks.concat(text || images.length ? [{ k: 'user', text, ts, queued: true, images: images.length ? images : undefined }] : []);
         }
         return [];
       }
@@ -156,7 +156,8 @@
         }
         if (!out.length) {
           const images = imagesOf(c, storeImage);
-          const text = dropImageMarks(cleanPrompt(textOf(c)));
+          const { tasks, rest: text } = takeTasks(dropImageMarks(cleanPrompt(textOf(c))), ts);
+          out.push(...tasks);
           if (text || images.length) out.push({ k: text.startsWith('<') ? 'note' : 'user', text, ts, images: images.length ? images : undefined });
         }
         // working folder / git branch over time, for the info panel (added last: the check above relies on out.length)
@@ -188,6 +189,22 @@
       default:
         return [];
     }
+  }
+
+  // Claude Code reports a finished background command, agent or monitor event as a <task-notification> block
+  // inside a message (queued while it works, or a user line with origin task-notification). The terminal shows
+  // its <summary> as one line; so do we. Only blocks at the start of the message count: a prompt that merely
+  // mentions the tag stays the user's text, and an unclosed block isn't guessed at.
+  const TASK_HEAD = /^\s*<task-notification>([\s\S]*?)<\/task-notification>/;
+  const tagIn = (body, tag) => { const m = body.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)); return m ? m[1].trim() : ''; };
+  function takeTasks(text, ts) {
+    const tasks = [];
+    for (let m; (m = TASK_HEAD.exec(text)); text = text.slice(m[0].length)) {
+      const b = m[1];
+      tasks.push({ k: 'task', ts, status: tagIn(b, 'status'), summary: tagIn(b, 'summary'), taskId: tagIn(b, 'task-id'),
+        detail: clip(tagIn(b, 'result') || tagIn(b, 'event'), MAX_RESULT) });
+    }
+    return { tasks, rest: text.trim() };
   }
 
   // ---------- session metadata (title, first prompt, cwd, turn state), updated incrementally ----------

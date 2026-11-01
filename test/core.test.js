@@ -486,3 +486,51 @@ test('packMeta / unpackMeta: round trip, and anything off is ignored', () => {
   assert.deepStrictEqual([...m.keys()], ['p/ok']);
   assert.strictEqual(core.unpackMeta(new Map(), null), 0);
 });
+
+// ---------- <task-notification>: a finished background command / agent / monitor event ----------
+
+const notif = (o) => '<task-notification>\n' + Object.entries(o).map(([k, v]) => `<${k}>${v}</${k}>`).join('\n') + '\n</task-notification>';
+const DONE = notif({ 'task-id': 'bymgztr8g', 'tool-use-id': 'toolu_01', 'output-file': '/tmp/x/tasks/bymgztr8g.output', status: 'completed',
+  summary: 'Background command "Run full backend suite in background" completed (exit code 0)' });
+const queued = (prompt) => line({ type: 'attachment', timestamp: 't9', attachment: { type: 'queued_command', prompt } });
+const userMsg = (content, extra = {}) => line({ type: 'user', timestamp: 't9', message: { role: 'user', content }, ...extra });
+
+test('task notification sent while Claude works: one compact task event, not a "you" message', () => {
+  assert.deepStrictEqual(core.convert(queued(DONE), false), [{
+    k: 'task', ts: 't9', status: 'completed', taskId: 'bymgztr8g', detail: '',
+    summary: 'Background command "Run full backend suite in background" completed (exit code 0)',
+  }]);
+});
+
+test('task notification as a user line (origin task-notification) is the same event, not a note', () => {
+  const ev = core.convert(userMsg(DONE, { origin: { kind: 'task-notification' } }), false);
+  assert.deepStrictEqual(ev.map((e) => [e.k, e.status]), [['task', 'completed']]);
+});
+
+test('task notification: failed status, and the agent result / monitor event become the detail', () => {
+  const failed = core.convert(queued(notif({ 'task-id': 'a1', status: 'failed', summary: 'Background command "Live recording" failed with exit code 1' })), false)[0];
+  assert.strictEqual(failed.status, 'failed');
+  const agent = core.convert(queued(notif({ 'task-id': 'a2', status: 'completed', summary: 'Agent "Review" completed', result: 'Found 3 issues.\n\n- one', usage: '<total_tokens>9</total_tokens>' })), false)[0];
+  assert.strictEqual(agent.detail, 'Found 3 issues.\n\n- one');
+  const mon = core.convert(queued(notif({ 'task-id': 'm1', summary: 'Monitor "CI" event', event: 'build 41 green' })), false)[0];
+  assert.deepStrictEqual([mon.status, mon.detail], ['', 'build 41 green']);
+});
+
+test('several notifications in one message give one event each, in order', () => {
+  const two = DONE + '\n' + notif({ 'task-id': 'z', status: 'killed', summary: 'Background command "Serve" was stopped' });
+  assert.deepStrictEqual(core.convert(queued(two), false).map((e) => [e.k, e.taskId, e.status]), [['task', 'bymgztr8g', 'completed'], ['task', 'z', 'killed']]);
+});
+
+test('text typed after a notification stays a normal message', () => {
+  const ev = core.convert(queued(DONE + '\nand also fix the footer'), false);
+  assert.deepStrictEqual(ev.map((e) => e.k), ['task', 'user']);
+  assert.strictEqual(ev[1].text, 'and also fix the footer');
+  assert.strictEqual(ev[1].queued, true);
+});
+
+test('a prompt that only mentions <task-notification> is still the user\'s prompt', () => {
+  const [ev] = core.convert(userMsg('why does <task-notification> show up raw?'), false);
+  assert.deepStrictEqual([ev.k, ev.text], ['user', 'why does <task-notification> show up raw?']);
+  // an unclosed block is not guessed at either
+  assert.ok(!core.convert(queued('<task-notification><summary>half'), false).some((e) => e.k === 'task'));
+});

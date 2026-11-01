@@ -2330,6 +2330,12 @@ class Pane {
         el = document.createElement('details');
         el.className = 'thinking';
         el.innerHTML = `<summary>${t('msg.thinking')}</summary><div class="th-body">${md(ev.text)}</div>`;
+      } else if (ev.k === 'task') {
+        // a finished background command / agent / monitor event: one line like the terminal, details folded
+        const head = `<span class="task-dot"></span><span class="task-sum" dir="auto">${esc(ev.summary || ev.status || ev.taskId)}</span><span class="task-time">${hhmm(ev.ts)}</span>`;
+        el = document.createElement(ev.detail ? 'details' : 'div');
+        el.className = 'task ' + ({ completed: 'ok', failed: 'bad', killed: 'bad', stopped: 'stop' }[ev.status] || '');
+        el.innerHTML = ev.detail ? `<summary>${head}</summary><div class="task-body" dir="auto">${md(ev.detail)}</div>` : head;
       } else if (ev.k === 'note') {
         el = document.createElement('div');
         el.className = 'note';
