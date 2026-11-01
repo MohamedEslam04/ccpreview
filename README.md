@@ -96,6 +96,7 @@ Firefox and Safari do not support folder access. Use `npx marsad` there.
 - Nothing is uploaded. There is no analytics, no telemetry and no external request, in either mode.
 - Folder mode requests read-only access. The hosted page never writes to your folder.
 - Notes are stored in `~/.marsad/pages.json` in server mode (with daily backups in `~/.marsad/backups`, the last 14 kept) and in the browser's `localStorage` in folder mode.
+- The optional hook (off unless you run `marsad hook install`) writes only under `~/.marsad` and to your `settings.json`, as described above.
 - Transcripts can contain secrets and source code. Do not expose the server to a network.
 
 ## CLI options
@@ -114,6 +115,23 @@ marsad [options]
 ## Optional: start on login
 
 On Linux, systemd socket activation starts Marsad the first time you open `http://127.0.0.1:4747/` and costs nothing while idle. See [docs/systemd](https://github.com/MohamedEslam04/marsad/tree/main/docs/systemd) for the unit files and setup.
+
+## Optional: see questions while they wait
+
+Claude Code writes a question (`AskUserQuestion`) or a plan to approve (`ExitPlanMode`) to the transcript only after you answer it, so a viewer cannot show one that is still waiting. A small Claude Code hook can. It is off by default and Marsad works the same without it.
+
+```sh
+npx marsad hook install     # add the hook
+npx marsad hook status      # installed or not, and where
+npx marsad hook uninstall   # remove it
+```
+
+With the hook, a waiting question or plan appears as a card at the end of the session, the session shows as "Waiting for you" in the sidebar, and the card disappears once you answer in the terminal. Answering still happens in the terminal.
+
+- `install` only adds its own entries to `~/.claude/settings.json` (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop` and `UserPromptSubmit`). Every other setting and hook is left as it is. It is safe to run twice, keeps a backup next to the file as `settings.json.marsad-bak`, and refuses to touch a `settings.json` that is not valid JSON.
+- `uninstall` removes only those entries, and the empty lists they leave behind.
+- The hook script is copied to `~/.marsad/hooks/pending-ask.js`, and waiting questions are stored in `~/.marsad/pending/<session>.json` (private to your user, deleted when answered, ignored after 12 hours). Nothing is written inside `~/.claude` except your `settings.json`. The hook prints nothing and never blocks Claude Code. With `--data`, Marsad reads `<dir>/pending`, so keep the default if you use the hook.
+- The hosted page cannot read `~/.marsad`, so it shows nothing extra. This needs `npx marsad`.
 
 ## Keyboard shortcuts
 
@@ -176,6 +194,7 @@ npm test           # node:test, no dependencies
 - **معلومات السيشن (زرار `i`):** الكونتكست دلوقتي ونسبته من الشباك وآخر ضغط، المود والإيفورت، التوكنز المتحاسبة، وحالة git (الفرع، الـ commits اللي لسه ما اترفعتش، الملفات المتعدّلة) مع `npx marsad`.
 - **الصور:** عارض فيه زوم وسحب وخصائص الصورة وشريط مصغّرات بمعاينة لما تقف عليها.
 - **عربي صح:** الواجهة عربي وإنجليزي، وكل سطر بياخد اتجاه اللغة الغالبة فيه، فاللي مكتوب إنجليزي بيتقري من الشمال واللي عربي من اليمين. فاتح وغامق.
+- **سؤال مستنيك (اختياري):** لو ركّبت الـ hook بـ `npx marsad hook install` (و`uninstall` و`status`) بيظهر السؤال أو الخطة وهي لسه مستنياك، مش بعد ما تجاوب. بيضيف سطوره بس في `~/.claude/settings.json` ومبيلمسش حاجة تانية، ومحتاج `npx marsad` (الصفحة المستضافة مبتشوفوش).
 - **صفحة ملاحظات:** صفحات بمصغّرات، ولو لزقت جدول من التيرمينال أو markdown بيتحوّل لجدول حقيقي.
 
 التشغيل:
