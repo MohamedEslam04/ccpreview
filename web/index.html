@@ -11,51 +11,51 @@
 <aside id="side">
   <div class="side-top">
     <div class="seg" role="tablist">
-      <button data-tab="pages" role="tab">الصفحات <span class="count" id="pageCount"></span></button>
-      <button data-tab="sessions" role="tab">السيشنز <span id="liveBadge"></span></button>
+      <button data-tab="pages" role="tab"><span data-i18n="tab.pages"></span> <span class="count" id="pageCount"></span></button>
+      <button data-tab="sessions" role="tab"><span data-i18n="tab.sessions"></span> <span id="liveBadge"></span></button>
     </div>
   </div>
 
   <div id="pagesPane" class="pane">
     <div class="pane-tools">
-      <button id="add" class="btn primary" title="صفحة جديدة (Ctrl+Enter)"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>صفحة جديدة</button>
-      <button id="searchBtn" class="btn" title="بحث في الصفحات (Ctrl+K)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+      <button id="add" class="btn primary" data-i18n-title="pages.new_tip"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="pages.new"></span></button>
+      <button id="searchBtn" class="btn" data-i18n-title="pages.search_tip"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
     </div>
     <ol id="thumbs"></ol>
   </div>
 
   <div id="sessionsPane" class="pane" hidden>
     <div class="pane-tools">
-      <label class="field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="sessFilter" placeholder="فلترة السيشنز  ( / )" autocomplete="off"></label>
-      <button id="groupBy" class="btn" title="تقسيم اللستة"></button>
-      <button id="foldAll" class="btn" title="طي كل البروجكتس"></button>
+      <label class="field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="sessFilter" data-i18n-placeholder="sessions.filter_ph" autocomplete="off"></label>
+      <button id="groupBy" class="btn"></button>
+      <button id="foldAll" class="btn"></button>
     </div>
-    <div class="sess-filters" id="sessFilters" role="tablist" aria-label="فلترة السيشنز"></div>
+    <div class="sess-filters" id="sessFilters" role="tablist" data-i18n-aria-label="sessions.filter_aria"></div>
     <div class="date-row">
-      <span class="date-sel" title="فلتر بالتاريخ (آخر نشاط في السيشن)">
+      <span class="date-sel" data-i18n-title="date.tip">
         <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
         <select id="dateFilter">
-          <option value="any">أي وقت</option>
-          <option value="today">النهارده</option>
-          <option value="yesterday">امبارح بس</option>
-          <optgroup label="آخر كام يوم (من النهارده)">
-            <option value="d2">آخر يومين</option>
-            <option value="d3">آخر 3 أيام</option>
-            <option value="d4">آخر 4 أيام</option>
-            <option value="d5">آخر 5 أيام</option>
-            <option value="d6">آخر 6 أيام</option>
-            <option value="d7">آخر 7 أيام</option>
-            <option value="d10">آخر 10 أيام</option>
-            <option value="d14">آخر 14 يوم</option>
-            <option value="d30">آخر 30 يوم</option>
+          <option value="any" data-i18n="date.any"></option>
+          <option value="today" data-i18n="date.today"></option>
+          <option value="yesterday" data-i18n="date.yesterday"></option>
+          <optgroup data-i18n-label="date.group">
+            <option value="d2" data-i18n="date.d2"></option>
+            <option value="d3" data-i18n="date.d3"></option>
+            <option value="d4" data-i18n="date.d4"></option>
+            <option value="d5" data-i18n="date.d5"></option>
+            <option value="d6" data-i18n="date.d6"></option>
+            <option value="d7" data-i18n="date.d7"></option>
+            <option value="d10" data-i18n="date.d10"></option>
+            <option value="d14" data-i18n="date.d14"></option>
+            <option value="d30" data-i18n="date.d30"></option>
           </optgroup>
-          <option value="custom">من تاريخ لتاريخ…</option>
+          <option value="custom" data-i18n="date.custom"></option>
         </select>
       </span>
       <span class="date-custom" id="dateCustom" hidden>
-        <input type="date" id="dateFrom" title="من"><span>←</span><input type="date" id="dateTo" title="لحد">
+        <input type="date" id="dateFrom" data-i18n-title="date.from"><span data-i18n="date.arrow"></span><input type="date" id="dateTo" data-i18n-title="date.to">
       </span>
-      <button class="date-clear" id="dateClear" title="شيل فلتر التاريخ" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <button class="date-clear" id="dateClear" data-i18n-title="date.clear" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div id="sessList"></div>
   </div>
@@ -63,47 +63,49 @@
   <div class="side-foot">
     <button id="srvBtn" class="chip"><span class="dot"></span><span class="lbl"></span><span class="act"></span></button>
     <span id="saveState"></span>
-    <button id="exportBtn" class="icon-btn" title="تصدير الصفحات (JSON)"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
-    <button id="importBtn" class="icon-btn" title="استيراد صفحات (JSON)"><svg viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg></button>
-    <button id="notifyBtn" class="icon-btn" title="إشعارات السيشنز"></button>
-    <button id="themeBtn" class="icon-btn" title="الثيم"></button>
-    <button id="close" class="icon-btn" title="إخفاء الشريط (Ctrl+\)"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+    <button id="exportBtn" class="icon-btn" data-i18n-title="pages.export_tip"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
+    <button id="importBtn" class="icon-btn" data-i18n-title="pages.import_tip"><svg viewBox="0 0 24 24"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg></button>
+    <button id="notifyBtn" class="icon-btn"></button>
+    <button id="langBtn" class="icon-btn"></button>
+    <button id="themeBtn" class="icon-btn"></button>
+    <button id="close" class="icon-btn" data-i18n-title="side.hide"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
   </div>
-  <div id="resizer" title="اسحب لتغيير العرض، دبل كليك للرجوع للعرض الأصلي"></div>
+  <div id="resizer" data-i18n-title="side.resize"></div>
 </aside>
 
 <main id="main">
   <div id="edWrap" class="scroll">
-    <div id="ed" class="page" contenteditable spellcheck="false"></div>
+    <div id="ed" class="page" contenteditable spellcheck="false" data-i18n-data-ph="pages.editor_ph"></div>
   </div>
   <div class="hints" id="hints">
-    <span><kbd>Ctrl</kbd><kbd>Enter</kbd> صفحة جديدة</span>
-    <span><kbd>Ctrl</kbd><kbd>K</kbd> بحث</span>
-    <span><kbd>Alt</kbd><kbd>↑↓</kbd> تنقل</span>
-    <span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd> لصق خام</span>
+    <span><kbd>Ctrl</kbd><kbd>Enter</kbd> <span data-i18n="hint.new"></span></span>
+    <span><kbd>Ctrl</kbd><kbd>K</kbd> <span data-i18n="hint.search"></span></span>
+    <span><kbd>Alt</kbd><kbd>↑↓</kbd> <span data-i18n="hint.nav"></span></span>
+    <span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd> <span data-i18n="hint.raw"></span></span>
   </div>
   <div id="panes" hidden></div>
   <div id="vempty" class="scroll vempty" hidden></div>
 </main>
 
-<button id="open" class="icon-btn" title="إظهار الشريط (Ctrl+\)"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+<button id="open" class="icon-btn" data-i18n-title="side.show"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
 <div id="tblbar" hidden>
-  <button class="btn" data-f="md" title="انسخ الجدول كـ Markdown">نسخ Markdown</button>
-  <button class="btn" data-f="tsv" title="انسخ الجدول للصق في Excel أو Sheets">نسخ لـ Excel</button>
+  <button class="btn" data-f="md" data-i18n-title="table.md_tip" data-i18n="table.md"></button>
+  <button class="btn" data-f="tsv" data-i18n-title="table.tsv_tip" data-i18n="table.tsv"></button>
 </div>
 <div id="search" hidden>
   <div class="box">
-    <div class="qrow"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="ابحث في كل الصفحات" autocomplete="off"><kbd>Esc</kbd></div>
+    <div class="qrow"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" data-i18n-placeholder="pages.search_ph" autocomplete="off"><kbd>Esc</kbd></div>
     <ul id="results"></ul>
   </div>
 </div>
 <div id="toast" hidden></div>
 <div class="menu" id="widthMenu" hidden></div>
-<div id="lightbox" hidden><img alt=""><div class="lb-bar"><span id="lbCount"></span><a id="lbOpen" target="_blank" rel="noopener">افتح في تاب</a><span>Esc للقفل · ← → للتنقل</span></div></div>
+<div id="lightbox" hidden><img alt=""><div class="lb-bar"><span id="lbCount"></span><a id="lbOpen" target="_blank" rel="noopener" data-i18n="lightbox.open"></a><span data-i18n="lightbox.hint"></span></div></div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
 
 <script src="core.js"></script>
 <script src="source.js"></script>
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

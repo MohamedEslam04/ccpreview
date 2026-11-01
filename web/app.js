@@ -7,12 +7,19 @@ const SERVER = SRC.mode === 'server';
 let sourceState = 'loading'; // ready | offline | needs-folder | needs-permission | unsupported
 const LS_PAGES = 'marsad.pages.v1'; // notes pages (the only store in folder mode, a backup in server mode)
 const LS_UI = 'marsad.ui.v1';       // per-browser UI state: tab, open panes, widths, scroll
+// Language first: the markup is translated before the setup below reads it.
+(function () {
+  let l;
+  try { l = JSON.parse(localStorage.getItem(LS_UI)).lang; } catch (e) {}
+  setLang(I18N[l] ? l : LANG);
+  applyI18n(document);
+})();
 const DEFAULT_W = 260;
 const WIDTHS = {
-  sm: { css: '720px', label: 'ضيق', hint: '720px', bar: 45 },
-  md: { css: '920px', label: 'متوسط', hint: '920px', bar: 62 },
-  lg: { css: '1200px', label: 'عريض', hint: '1200px', bar: 82 },
-  full: { css: 'none', label: 'كامل العرض', hint: 'كل الشاشة', bar: 100 },
+  sm: { css: '720px', label: 'width.sm', hint: '720px', bar: 45 },
+  md: { css: '920px', label: 'width.md', hint: '920px', bar: 62 },
+  lg: { css: '1200px', label: 'width.lg', hint: '1200px', bar: 82 },
+  full: { css: 'none', label: 'width.full', hintKey: 'width.full_hint', bar: 100 },
 };
 const WIDTH_ORDER = ['sm', 'md', 'lg', 'full'];
 
@@ -68,13 +75,13 @@ function htmlText(html) {
 }
 function ago(ms) {
   const s = (Date.now() - ms) / 1000;
-  if (s < 60) return 'دلوقتي';
-  if (s < 3600) return `من ${Math.floor(s / 60)} د`;
-  if (s < 86400) return `من ${Math.floor(s / 3600)} س`;
-  return `من ${Math.floor(s / 86400)} يوم`;
+  if (s < 60) return t('ago.now');
+  if (s < 3600) return t('ago.min', { n: Math.floor(s / 60) });
+  if (s < 86400) return t('ago.hour', { n: Math.floor(s / 3600) });
+  return t('ago.day', { n: Math.floor(s / 86400) });
 }
 function hhmm(ts) {
-  return ts ? new Date(ts).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '';
+  return ts ? new Date(ts).toLocaleTimeString(LOCALE[LANG], { hour: '2-digit', minute: '2-digit' }) : '';
 }
 const uid = () => Math.random().toString(36).slice(2, 10);
 async function copyText(text) {
@@ -148,9 +155,13 @@ function enhanceSelect(sel, cls) {
     menu.style.minWidth = Math.max(r.width, 160) + 'px';
     const h = menu.offsetHeight, below = innerHeight - r.bottom;
     menu.style.top = (below < h + 12 && r.top > below ? Math.max(8, r.top - h - 6) : r.bottom + 6) + 'px';
-    // RTL: line the menu up with the button's right edge, but keep it on screen
-    menu.style.right = Math.max(8, innerWidth - r.right) + 'px';
-    if (menu.getBoundingClientRect().left < 8) { menu.style.right = 'auto'; menu.style.left = '8px'; }
+    // line the menu up with the button's start edge (right in RTL, left in LTR), but keep it on screen
+    if (isRtl()) {
+      menu.style.right = Math.max(8, innerWidth - r.right) + 'px';
+      if (menu.getBoundingClientRect().left < 8) { menu.style.right = 'auto'; menu.style.left = '8px'; }
+    } else {
+      menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + 'px';
+    }
   };
   const open = () => {
     if (openDropdown) openDropdown.close();
@@ -446,13 +457,13 @@ function save() {
 async function persist() {
   const body = JSON.stringify({ pages: state.pages, cur: state.cur });
   try { localStorage.setItem(LS_PAGES, body); } catch (e) {}
-  if (!SERVER || serverOff) { setSave('محفوظ في المتصفح'); return; }
+  if (!SERVER || serverOff) { setSave(t('save.browser')); return; }
   try {
     const r = await fetch('/api/pages', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
     if (!r.ok) throw new Error(r.status);
-    setSave('اتحفظ');
+    setSave(t('save.saved'));
   } catch (e) {
-    setSave('محفوظ في المتصفح بس', true);
+    setSave(t('save.browser_only'), true);
     setServerUi(false);
   }
 }
@@ -477,15 +488,15 @@ function setServerUi(on) {
   b.classList.toggle('on', on);
   if (!SERVER) {
     // folder mode: the chip is the folder connection
-    b.querySelector('.lbl').textContent = SRC.ready ? SRC.folderName : 'مش متوصل';
-    b.querySelector('.act').textContent = SRC.ready ? 'غيّر الفولدر' : 'وصّل';
-    b.title = SRC.ready ? `بيقرا من فولدر "${SRC.folderName}" على جهازك` : 'وصّل فولدر السيشنز';
+    b.querySelector('.lbl').textContent = SRC.ready ? SRC.folderName : t('srv.not_connected');
+    b.querySelector('.act').textContent = SRC.ready ? t('srv.change_folder') : t('srv.connect');
+    b.title = SRC.ready ? t('srv.reading_tip', { name: SRC.folderName }) : t('srv.connect_tip');
     return;
   }
   const service = SRC.info && SRC.info.service;
-  b.querySelector('.lbl').textContent = on ? 'شغال' : 'مقفول';
-  b.title = on ? 'Marsad شغال على الجهاز ده' : 'Marsad مقفول';
-  b.querySelector('.act').textContent = on ? (service ? 'إيقاف' : 'شغال') : 'تشغيل';
+  b.querySelector('.lbl').textContent = on ? t('srv.running') : t('srv.stopped');
+  b.title = on ? t('srv.running_tip') : t('srv.stopped_tip');
+  b.querySelector('.act').textContent = on ? (service ? t('srv.stop') : t('srv.running')) : t('srv.start');
 }
 function startServer() { location.reload(); }
 async function connectFolder(again) {
@@ -500,20 +511,20 @@ async function connectFolder(again) {
     setTab(ui.tab);
   } catch (e) {
     if (e && e.name === 'AbortError') return; // closed the picker
-    toast(e && e.message === 'not-projects' ? 'الفولدر ده مفيهوش سيشنز. اختار ~/.claude/projects' : 'معرفتش أوصل للفولدر');
+    toast(e && e.message === 'not-projects' ? t('srv.not_projects') : t('srv.folder_failed'));
   }
 }
 $('srvBtn').onclick = async () => {
   if (!SERVER) return connectFolder(sourceState === 'needs-permission');
   if (serverOff || !$('srvBtn').classList.contains('on')) return startServer();
-  if (!(SRC.info && SRC.info.service)) { toast('Marsad شغال. تقفله من التيرمينال بـ Ctrl+C'); return; }
+  if (!(SRC.info && SRC.info.service)) { toast(t('srv.ctrl_c')); return; }
   state.pages[state.cur].html = ed.innerHTML;
   await persist();
   serverOff = true; // stop polling/streaming, or they would wake the socket-activated server again
   panes.forEach((p) => { if (p.es) { p.es.close(); p.es = null; } });
   try { await fetch('/api/shutdown', { method: 'POST' }); } catch (e) {}
   setServerUi(false);
-  setSave('محفوظ في المتصفح');
+  setSave(t('save.browser'));
   renderSessions();
 };
 
@@ -537,8 +548,8 @@ function renderThumbs() {
     li.dataset.i = i;
     if (i === state.cur) li.className = 'on';
     li.innerHTML = `<span class="n">${i + 1}</span><div class="col"><div class="thumb"><div class="mini page"></div></div>` +
-      `<div class="name" dir="auto" data-ph="دبل كليك لتسمية الصفحة">${esc(p.name || '')}</div>` +
-      `<button class="del" title="حذف الصفحة">${ICON.x}</button></div>`;
+      `<div class="name" dir="auto" data-ph="${esc(t('pages.name_ph'))}">${esc(p.name || '')}</div>` +
+      `<button class="del" title="${esc(t('pages.del_tip'))}">${ICON.x}</button></div>`;
     thumbs.append(li);
     fillMini(li, p.html);
   });
@@ -578,7 +589,7 @@ function addPage(html, name) {
 
 function delPage(i) {
   save();
-  if (htmlText(state.pages[i].html) && !confirm(`حذف الصفحة ${i + 1}؟`)) return;
+  if (htmlText(state.pages[i].html) && !confirm(t('pages.del_confirm', { n: i + 1 }))) return;
   delete ui.edScroll[state.pages[i].id];
   state.pages.splice(i, 1);
   if (!state.pages.length) state.pages.push({ id: uid(), html: '', name: '' });
@@ -721,7 +732,7 @@ tblbar.addEventListener('click', async (e) => {
   } else {
     out = rows.map((r) => r.map((c) => c.replace(/\t/g, ' ')).join('\t')).join('\n');
   }
-  toast((await copyText(out)) ? (f === 'md' ? 'الجدول اتنسخ كـ Markdown' : 'الجدول اتنسخ، الصقه في Excel أو Sheets') : 'النسخ فشل');
+  toast((await copyText(out)) ? t(f === 'md' ? 'table.md_done' : 'table.tsv_done') : t('copy.failed'));
 });
 
 // =====================================================================
@@ -743,7 +754,7 @@ function renderHits() {
   state.pages.forEach((p, i) => {
     const text = htmlText(p.html);
     const name = p.name || '';
-    if (!term) { hits.push({ i, name, snip: text.slice(0, 90) || 'صفحة فاضية' }); return; }
+    if (!term) { hits.push({ i, name, snip: text.slice(0, 90) || t('pages.empty') }); return; }
     const at = text.toLowerCase().indexOf(term);
     if (at === -1 && !name.toLowerCase().includes(term)) return;
     const from = Math.max(0, at - 40);
@@ -754,7 +765,7 @@ function renderHits() {
     let snip = esc(h.snip);
     if (h.term) snip = snip.replace(new RegExp(esc(h.term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), (x) => `<mark>${x}</mark>`);
     return `<li data-k="${k}"${k === 0 ? ' class="sel"' : ''}><span class="rn">${h.i + 1}${h.name ? ' · ' + esc(h.name) : ''}</span><span class="snip" dir="auto">${snip}</span></li>`;
-  }).join('') || '<li class="snip">مفيش نتايج</li>';
+  }).join('') || `<li class="snip">${t('pages.no_results')}</li>`;
 }
 function pick(k) {
   const h = hits[k];
@@ -792,7 +803,7 @@ $('exportBtn').onclick = () => {
   a.download = `pad-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast(`اتصدّرت ${state.pages.length} صفحة`);
+  toast(tn('pages.exported', state.pages.length));
 };
 $('importBtn').onclick = () => $('importFile').click();
 $('importFile').onchange = async (e) => {
@@ -810,9 +821,9 @@ $('importFile').onchange = async (e) => {
     // replace a single empty page instead of keeping it around
     if (state.pages.length === 1 && !htmlText(state.pages[0].html)) { state.pages = pages; go(0); }
     else { state.pages.push(...pages); go(first); }
-    toast(`اتضافت ${pages.length} صفحة`);
+    toast(tn('pages.added', pages.length));
   } catch (err) {
-    toast('الملف ده مش ملف صفحات صالح');
+    toast(t('pages.import_bad'));
   }
 };
 
@@ -820,18 +831,43 @@ $('importFile').onchange = async (e) => {
 // theme, sidebar, resize
 // =====================================================================
 const THEMES = ['auto', 'light', 'dark'];
-const THEME_LABEL = { auto: 'تلقائي (حسب السيستم)', light: 'فاتح', dark: 'غامق' };
+const THEME_LABEL = { auto: 'theme.auto', light: 'theme.light', dark: 'theme.dark' };
+const themeName = () => t('theme.title', { name: t(THEME_LABEL[ui.theme]) });
 function applyTheme() {
   if (ui.theme === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.dataset.theme = ui.theme;
   $('themeBtn').innerHTML = ICON[{ auto: 'auto', light: 'sun', dark: 'moon' }[ui.theme]];
-  $('themeBtn').title = 'الثيم: ' + THEME_LABEL[ui.theme];
+  $('themeBtn').title = themeName();
 }
 $('themeBtn').onclick = () => {
   ui.theme = THEMES[(THEMES.indexOf(ui.theme) + 1) % THEMES.length];
   applyTheme();
-  toast('الثيم: ' + THEME_LABEL[ui.theme]);
+  toast(themeName());
   saveUi();
+};
+
+// Language button: shows the other language. Switching redraws the markup and everything JS renders;
+// open sessions are reopened because their transcript text was built in the old language
+// (scroll position and panes come back as after a reload).
+function renderLangBtn() {
+  $('langBtn').textContent = t('lang.other');
+  $('langBtn').title = t('lang.switch');
+}
+$('langBtn').onclick = () => {
+  ui.lang = LANG === 'ar' ? 'en' : 'ar';
+  setLang(ui.lang);
+  saveUi();
+  applyI18n(document);
+  document.querySelectorAll('.dd-native').forEach(syncSelect);
+  renderLangBtn();
+  applyTheme();
+  renderNotifyBtn();
+  renderGroupBtn();
+  renderWidthMenu();
+  setServerUi($('srvBtn').classList.contains('on'));
+  renderThumbs();
+  restorePanes(true);
+  setTab(ui.tab);
 };
 
 function setCollapsed(v) {
@@ -853,7 +889,7 @@ $('resizer').addEventListener('pointerdown', (e) => {
   const r = $('resizer');
   r.setPointerCapture(e.pointerId);
   document.body.classList.add('resizing');
-  const move = (ev) => { applyWidth(window.innerWidth - ev.clientX); rerenderThumbs(); };
+  const move = (ev) => { applyWidth(isRtl() ? window.innerWidth - ev.clientX : ev.clientX); rerenderThumbs(); };
   const up = () => {
     r.removeEventListener('pointermove', move);
     document.body.classList.remove('resizing');
@@ -920,21 +956,21 @@ async function loadSessions() {
 // What the sidebar shows when there is nothing to read yet.
 function connectHtml() {
   const npx = '<code dir="ltr">npx marsad</code>';
-  if (SERVER) return `<div class="empty">Marsad مقفول.<br><br><button class="btn primary" data-start>تشغيل</button><p class="connect-hint">لو مش شغال، شغّله من التيرمينال: ${npx}</p></div>`;
+  if (SERVER) return `<div class="empty">${t('connect.stopped')}<br><br><button class="btn primary" data-start>${t('srv.start')}</button><p class="connect-hint">${t('connect.stopped_hint', { cmd: npx })}</p></div>`;
   if (sourceState === 'unsupported') {
-    return `<div class="empty connect"><b>المتصفح ده مش بيقدر يقرا فولدرات من الجهاز.</b>` +
-      `<p>استخدم Chrome أو Edge، أو شغّل Marsad على جهازك:</p><pre dir="ltr">${npx.replace(/<\/?code[^>]*>/g, '')}</pre>` +
-      `<p class="connect-hint">على Brave: فعّل <code dir="ltr">brave://flags/#file-system-access-api</code> وأعد تشغيل المتصفح.</p></div>`;
+    return `<div class="empty connect"><b>${t('connect.unsupported')}</b>` +
+      `<p>${t('connect.unsupported_use')}</p><pre dir="ltr">${npx.replace(/<\/?code[^>]*>/g, '')}</pre>` +
+      `<p class="connect-hint">${t('connect.brave', { flag: '<code dir="ltr">brave://flags/#file-system-access-api</code>' })}</p></div>`;
   }
   if (sourceState === 'needs-permission') {
-    return `<div class="empty connect"><b>المتصفح محتاج إذنك تاني عشان يقرا "${esc(SRC.folderName)}".</b>` +
-      `<br><br><button class="btn primary" data-reconnect>اسمح بالقراية</button></div>`;
+    return `<div class="empty connect"><b>${t('connect.permission', { name: esc(SRC.folderName) })}</b>` +
+      `<br><br><button class="btn primary" data-reconnect>${t('connect.allow')}</button></div>`;
   }
-  return `<div class="empty connect"><b>وصّل فولدر سيشنز Claude Code</b>` +
-    `<p>اختار فولدر <code dir="ltr">~/.claude/projects</code>. المتصفح هيقراه بس، ومفيش أي حاجة بتترفع لأي مكان.</p>` +
-    `<button class="btn primary" data-pick>اختار الفولدر</button>` +
-    `<p class="connect-hint">الفولدر مخفي؟ في نافذة الاختيار دوس <kbd>Ctrl</kbd>+<kbd>H</kbd> على Linux، أو <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd> على Mac.</p>` +
-    `<p class="connect-hint">أو شغّل ${npx} على جهازك.</p></div>`;
+  return `<div class="empty connect"><b>${t('connect.title')}</b>` +
+    `<p>${t('connect.pick_text', { path: '<code dir="ltr">~/.claude/projects</code>' })}</p>` +
+    `<button class="btn primary" data-pick>${t('connect.pick')}</button>` +
+    `<p class="connect-hint">${t('connect.hidden', { linux: '<kbd>Ctrl</kbd>+<kbd>H</kbd>', mac: '<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd>' })}</p>` +
+    `<p class="connect-hint">${t('connect.or_run', { cmd: npx })}</p></div>`;
 }
 
 const isLive = (ms) => Date.now() - ms < 90e3;
@@ -958,11 +994,11 @@ const SPLIT_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height
 
 const PIN_ICON = '<svg viewBox="0 0 24 24"><path d="M12 17v5M8 3h8l-1 6 3 3v2H6v-2l3-3z"/></svg>';
 const QUICK_FILTERS = [
-  { k: 'all', label: 'الكل' },
-  { k: 'live', label: 'شغالة' },
-  { k: 'asking', label: 'مستنية ردك' },
-  { k: 'open', label: 'مفتوحة' },
-  { k: 'pinned', label: 'مثبتة' },
+  { k: 'all', label: 'filter.all' },
+  { k: 'live', label: 'filter.live' },
+  { k: 'asking', label: 'filter.asking' },
+  { k: 'open', label: 'filter.open' },
+  { k: 'pinned', label: 'filter.pinned' },
 ];
 const sessLive = (s) => isLive(s.active || s.mtime) || (s.agents || []).some((a) => isLive(a.mtime));
 const isPinned = (s) => (ui.pinned || []).includes(s.id);
@@ -1035,22 +1071,22 @@ function renderFilters() {
     const n = f.k === 'all' ? 0 : all.filter(({ p, s }) => matchesQuick(p, s, f.k)).length;
     if (f.k !== 'all' && f.k !== k && !n) return ''; // hide empty filters (except the active one)
     return `<button class="qf${f.k === k ? ' on' : ''}${f.k === 'live' && n ? ' has-live' : ''}${f.k === 'asking' && n ? ' has-ask' : ''}" data-qf="${f.k}" role="tab" aria-selected="${f.k === k}">` +
-      `${f.label}${n ? `<span class="qf-n">${n}</span>` : ''}</button>`;
+      `${t(f.label)}${n ? `<span class="qf-n">${n}</span>` : ''}</button>`;
   }).join('');
 }
 
 // Groups for "by time": today, yesterday, then one group per day for the rest of the week
-// (named by weekday + date, e.g. "الخميس 29 أكتوبر"), then the rest of the month, then older.
+// (named by weekday + date, e.g. "Thursday, October 29"), then the rest of the month, then older.
 function timeBuckets() {
   const today = dayStart(Date.now()), DAY = 864e5;
-  const dayName = (t) => new Date(t).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' });
+  const dayName = (ms) => new Date(ms).toLocaleDateString(LOCALE[LANG], { weekday: 'long', day: 'numeric', month: 'long' });
   const list = [
-    { k: 'today', label: 'النهارده', from: today },
-    { k: 'yesterday', label: 'امبارح', from: today - DAY },
+    { k: 'today', label: t('time.today'), from: today },
+    { k: 'yesterday', label: t('time.yesterday'), from: today - DAY },
   ];
   for (let i = 2; i <= 6; i++) list.push({ k: 'day' + i, label: dayName(today - i * DAY), from: today - i * DAY });
-  list.push({ k: 'month', label: 'من أسبوع لشهر', from: today - 30 * DAY });
-  list.push({ k: 'older', label: 'أقدم من شهر', from: -Infinity });
+  list.push({ k: 'month', label: t('time.month'), from: today - 30 * DAY });
+  list.push({ k: 'older', label: t('time.older'), from: -Infinity });
   return list;
 }
 function renderGroupBtn() {
@@ -1059,14 +1095,14 @@ function renderGroupBtn() {
   b.innerHTML = time
     ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>'
     : '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
-  b.title = time ? 'مقسمة حسب الوقت (اضغط للتقسيم بالبروجكت)' : 'مقسمة حسب البروجكت (اضغط للتقسيم بالوقت)';
+  b.title = t(time ? 'group.by_time_tip' : 'group.by_project_tip');
   b.classList.toggle('on', time);
 }
 $('groupBy').onclick = () => {
   ui.groupBy = ui.groupBy === 'time' ? 'project' : 'time';
   saveUi();
   renderGroupBtn();
-  toast(ui.groupBy === 'time' ? 'التقسيم: حسب الوقت' : 'التقسيم: حسب البروجكت');
+  toast(t(ui.groupBy === 'time' ? 'group.toast_time' : 'group.toast_project'));
   if (ui.groupBy === 'time' && !dateActive()) { sess.list = null; renderSessions(); }
   loadSessions();
 };
@@ -1081,17 +1117,17 @@ function groupHead({ key, title, tip, avatar, count, rows, shut, isStatic, icon 
   const ava = icon
     ? `<span class="pj-ava icon">${icon}</span>`
     : `<span class="pj-ava" style="--h:${hueOf(avatar)}">${esc((avatar.match(/[\p{L}\p{N}]/u) || ['?'])[0].toUpperCase())}</span>`;
-  const sub = [`${count} ${count === 1 ? 'سيشن' : 'سيشنز'}`, last ? ago(last) : ''].filter(Boolean).join(' · ');
+  const sub = [tn('sessions.count', count), last ? ago(last) : ''].filter(Boolean).join(' · ');
   return `<button type="button" class="proj-name${isStatic ? ' static' : ''}" ${isStatic ? 'tabindex="-1"' : `aria-expanded="${!shut}"`} title="${esc(tip || title)}" data-key="${esc(key)}">` +
     ava + `<span class="pj-txt"><span class="pj-title" dir="${textDir(title)}">${esc(title)}</span><span class="pj-sub">${esc(sub)}</span></span>` +
-    (asking ? `<span class="pj-badge ask" title="${asking} مستنية ردك">${asking}</span>` : '') +
-    (live ? `<span class="pj-badge live" title="${live} شغالة دلوقتي">${live}</span>` : '') +
+    (asking ? `<span class="pj-badge ask" title="${esc(t('sessions.badge_asking', { n: asking }))}">${asking}</span>` : '') +
+    (live ? `<span class="pj-badge live" title="${esc(t('sessions.badge_live', { n: live }))}">${live}</span>` : '') +
     (isStatic ? '' : `<span class="pj-chev">${ICON.chevDown}</span>`) + '</button>';
 }
 
 function sessRow(p, s, now, withProject) {
   const act = activePane && activePane.key;
-  const splitBtn = `<button class="split-btn" data-split title="افتح في عمود جديد (Ctrl+كليك)">${SPLIT_ICON}</button>`;
+  const splitBtn = `<button class="split-btn" data-split title="${esc(t('sessions.split_tip'))}">${SPLIT_ICON}</button>`;
   const agents = s.agents || [];
   const live = now - (s.active || s.mtime) < 90e3;
   const on = shown(p.dir, s.id, '');
@@ -1099,21 +1135,21 @@ function sessRow(p, s, now, withProject) {
   const pin = isPinned(s);
   let html = `<div class="sess${on ? ' on' : ''}${isAct ? ' act' : ''}${pin ? ' pinned' : ''}" data-dir="${esc(p.dir)}" data-id="${esc(s.id)}" title="${esc(s.title)}">` +
     `<span class="dot${live ? ' live' : ''}"></span><div class="st"><div class="stt" dir="${textDir(s.title)}">${esc(s.title)}</div>` +
-    `<div class="sm${live ? ' live' : ''}">${s.state === 'asking' ? '<span class="ask-badge">مستنية ردك</span>' : live ? 'شغالة دلوقتي' : ago(s.active || s.mtime)}` +
+    `<div class="sm${live ? ' live' : ''}">${s.state === 'asking' ? `<span class="ask-badge">${t('state.asking')}</span>` : live ? t('state.live') : ago(s.active || s.mtime)}` +
     `${withProject ? ` · <span class="sm-proj">${esc(p.name)}</span>` : ''}</div></div>` +
-    `<span class="row-acts"><button class="pin-btn${pin ? ' on' : ''}" data-pin title="${pin ? 'إلغاء التثبيت' : 'ثبّتها فوق'}">${PIN_ICON}</button>${splitBtn}</span></div>`;
+    `<span class="row-acts"><button class="pin-btn${pin ? ' on' : ''}" data-pin title="${esc(t(pin ? 'sessions.unpin' : 'sessions.pin'))}">${PIN_ICON}</button>${splitBtn}</span></div>`;
   if (agents.length) {
     const open = agentsOpen(s);
     const liveA = agents.filter((a) => isLive(a.mtime)).length;
     html += `<button class="agents-toggle${open ? ' open' : ''}" data-sid="${esc(s.id)}" data-open="${open ? 1 : 0}">${ICON.chev}` +
-      `<span>${agents.length === 1 ? 'subagent واحد' : agents.length + ' subagents'}</span>` +
-      (liveA ? `<span class="live-badge">${liveA} شغال</span>` : '') + '</button>';
+      `<span>${tn('agents.count', agents.length)}</span>` +
+      (liveA ? `<span class="live-badge">${t('agents.live', { n: liveA })}</span>` : '') + '</button>';
     if (open) {
       html += '<div class="agents">' + agents.map((a) => {
         const al = isLive(a.mtime);
         const aon = shown(p.dir, s.id, a.id);
         const name = a.description || 'subagent';
-        const meta = [a.type, a.model, al ? 'شغال دلوقتي' : ago(a.mtime)].filter(Boolean).join(' · ');
+        const meta = [a.type, a.model, al ? t('state.live_agent') : ago(a.mtime)].filter(Boolean).join(' · ');
         return `<div class="sess agent${aon ? ' on' : ''}" data-dir="${esc(p.dir)}" data-id="${esc(s.id)}" data-agent="${esc(a.id)}" title="${esc(name)}">` +
           `<span class="dot${al ? ' live' : ''}"></span><div class="st"><div class="stt" dir="${textDir(name)}">${esc(name)}</div>` +
           `<div class="sm${al ? ' live' : ''}">${esc(meta)}</div></div><span class="row-acts">${splitBtn}</span></div>`;
@@ -1129,7 +1165,7 @@ function renderSessions() {
   const n = liveCount();
   lb.className = n ? 'live-badge' : '';
   lb.textContent = n ? n : '';
-  lb.title = n ? `${n} سيشن شغالة دلوقتي` : '';
+  lb.title = n ? tn('sessions.live_title', n) : '';
 
   if (!SRC.ready || serverOff) {
     $('sessFilters').innerHTML = '';
@@ -1150,7 +1186,7 @@ function renderSessions() {
   // pinned sessions first, across projects (shown only here, not again under their project)
   const pinned = sess.list.flatMap((p) => p.sessions.filter((s) => isPinned(s) && textOk(p, s) && matchesQuick(p, s, qk)).map((s) => ({ p, s })));
   if (pinned.length) {
-    html += `<div class="proj pinned-group">` + groupHead({ key: 'pinned', title: 'مثبتة', avatar: '', icon: PIN_ICON, count: pinned.length, rows: pinned, isStatic: true }) +
+    html += `<div class="proj pinned-group">` + groupHead({ key: 'pinned', title: t('filter.pinned'), avatar: '', icon: PIN_ICON, count: pinned.length, rows: pinned, isStatic: true }) +
       pinned.map(({ p, s }) => sessRow(p, s, now, true)).join('') + '</div>';
   }
   if (qk !== 'pinned' && ui.groupBy === 'time') {
@@ -1181,14 +1217,14 @@ function renderSessions() {
       html += rows.map((s) => sessRow(p, s, now, false)).join('');
       const showingAll = (ui.moreProj || []).includes(p.dir);
       if (!filtering && (showingAll || (p.total || 0) > p.sessions.length)) {
-        html += `<button class="more-btn" data-more="${esc(p.dir)}">${showingAll ? 'عرض آخر 15 بس' : `عرض الكل (${p.total})`}</button>`;
+        html += `<button class="more-btn" data-more="${esc(p.dir)}">${showingAll ? t('sessions.show_15') : t('sessions.show_all', { n: p.total })}</button>`;
       }
       html += '</div>';
     });
   }
-  const emptyMsg = { live: 'مفيش سيشن شغالة دلوقتي.', asking: 'مفيش سيشن مستنية ردك.', open: 'مفيش سيشن مفتوحة في الأعمدة.', pinned: 'مفيش سيشنز مثبتة. اضغط الدبوس جنب أي سيشن.' }[qk];
+  const emptyMsg = ['live', 'asking', 'open', 'pinned'].includes(qk) ? t('sessions.empty.' + qk) : '';
   const scroll = sessList.scrollTop;
-  sessList.innerHTML = html || `<div class="empty">${f ? 'مفيش سيشن بالاسم ده.' : emptyMsg || (dateActive() ? 'مفيش سيشنز في الفترة دي.' : 'مفيش سيشنز لسه.')}</div>`;
+  sessList.innerHTML = html || `<div class="empty">${f ? t('sessions.empty.name') : emptyMsg || (dateActive() ? t('sessions.empty.period') : t('sessions.empty.none'))}</div>`;
   sessList.scrollTop = scroll;
 }
 
@@ -1203,7 +1239,7 @@ function updateFoldBtn() {
   b.innerHTML = allShut
     ? '<svg viewBox="0 0 24 24"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>'
     : '<svg viewBox="0 0 24 24"><path d="M7 20l5-5 5 5M7 4l5 5 5-5"/></svg>';
-  b.title = allShut ? 'فتح كل المجموعات' : 'طي كل المجموعات';
+  b.title = t(allShut ? 'sessions.unfold' : 'sessions.fold');
   b.dataset.mode = allShut ? 'open' : 'shut';
 }
 $('foldAll').onclick = () => {
@@ -1225,7 +1261,7 @@ function liveQuickList() {
 function renderEmptyView() {
   const box = $('vempty');
   if (!box.hidden) {
-    box.innerHTML = '<div><h2>اختار سيشن</h2><p>كل سيشن بتتحدث هنا أول بأول. Ctrl+كليك أو زرار العمود بيفتحها جنب التانية.</p>' + liveQuickList() + '</div>';
+    box.innerHTML = `<div><h2>${t('sessions.pick_title')}</h2><p>${t('sessions.pick_text')}</p>` + liveQuickList() + '</div>';
   }
   panes.forEach((p) => { if (!p.key) p.renderEmpty(); });
 }
@@ -1273,7 +1309,7 @@ sessList.addEventListener('click', (e) => {
   if (mb) {
     const dir = mb.dataset.more;
     ui.moreProj = (ui.moreProj || []).includes(dir) ? ui.moreProj.filter((d) => d !== dir) : [...(ui.moreProj || []), dir];
-    mb.textContent = 'بيحمّل…';
+    mb.textContent = t('sessions.loading');
     saveUi();
     loadSessions();
     return;
@@ -1336,7 +1372,7 @@ function diffHtml(d) {
       if (run.length > 7) {
         const head = html ? run.slice(0, 3) : [];
         const tail = end ? [] : run.slice(-3);
-        html += head.map(ctx).join('') + `<div class="dl gap">⋯ ${run.length - head.length - tail.length} سطر من غير تغيير</div>` + tail.map(ctx).join('');
+        html += head.map(ctx).join('') + `<div class="dl gap">${tn('diff.unchanged', run.length - head.length - tail.length)}</div>` + tail.map(ctx).join('');
       } else html += run.map(ctx).join('');
       run = [];
     };
@@ -1348,10 +1384,10 @@ function diffHtml(d) {
       html += `<div class="dl ${l[0] === '+' ? 'add' : 'del'}"><span class="sg">${l[0] === '+' ? '+' : '−'}</span><span>${esc(l[1]) || ' '}</span></div>`;
     });
     flush(true);
-    if (lines.length > head.length) html += `<div class="dl gap">⋯ و ${lines.length - head.length} سطر كمان</div>`;
+    if (lines.length > head.length) html += `<div class="dl gap">${tn('diff.more', lines.length - head.length)}</div>`;
     return html;
   });
-  const file = d.file ? `<div class="df-file">${esc(d.file)}${d.write ? ' · ملف جديد / مكتوب من الأول' : ''}${d.all ? ' · كل التكرارات' : ''}</div>` : '';
+  const file = d.file ? `<div class="df-file">${esc(d.file)}${d.write ? t('diff.new_file') : ''}${d.all ? t('diff.all') : ''}</div>` : '';
   return {
     stat: `<span class="stat"><span class="a">+${add}</span> <span class="d">−${del}</span></span>`,
     body: `<div class="diff" dir="ltr">${file}${parts.join('<div class="df-sep"></div>')}</div>`,
@@ -1395,7 +1431,7 @@ function buildSearchRe(q, o) {
 }
 
 function imgsHtml(list) {
-  return list.map((u) => `<a class="shot" href="${esc(u)}" data-img><img src="${esc(u)}" loading="lazy" alt="صورة"></a>`).join('');
+  return list.map((u) => `<a class="shot" href="${esc(u)}" data-img><img src="${esc(u)}" loading="lazy" alt="${esc(t('msg.image_alt'))}"></a>`).join('');
 }
 
 // ---------- one pane = one live session / subagent transcript ----------
@@ -1409,33 +1445,34 @@ class Pane {
     this.el.innerHTML =
       '<header class="phead"><span class="dot plive"></span>' +
       '<div class="vt"><div class="ptitle" dir="auto"></div><div class="pmeta"></div></div>' +
-      `<button class="icon-btn" data-a="search" title="دوّر في السيشن دي (Ctrl+F)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>` +
-      `<button class="icon-btn" data-a="width" title="عرض المحتوى (Ctrl+Alt+← →)"><svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg></button>` +
-      `<button class="icon-btn" data-a="split" title="عمود جديد جنبها">${SPLIT_ICON}</button>` +
-      `<button class="icon-btn" data-a="close" title="قفل العمود">${ICON.x}</button></header>` +
+      `<button class="icon-btn" data-a="search" data-i18n-title="pane.search_tip"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>` +
+      `<button class="icon-btn" data-a="width" data-i18n-title="pane.width_tip"><svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg></button>` +
+      `<button class="icon-btn" data-a="split" data-i18n-title="pane.split_tip">${SPLIT_ICON}</button>` +
+      `<button class="icon-btn" data-a="close" data-i18n-title="pane.close_tip">${ICON.x}</button></header>` +
       '<div class="pagents" hidden></div>' +
       '<div class="psearch" hidden><div class="ps-row">' +
-      '<label class="field ps-field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="ps-q" placeholder="دوّر في السيشن دي" autocomplete="off" spellcheck="false"></label>' +
+      '<label class="field ps-field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="ps-q" data-i18n-placeholder="pane.search_ph" autocomplete="off" spellcheck="false"></label>' +
       '<span class="ps-count"></span>' +
-      '<button class="icon-btn" data-s="prev" title="اللي قبلها (Shift+Enter)"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>' +
-      '<button class="icon-btn" data-s="next" title="اللي بعدها (Enter)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>' +
+      '<button class="icon-btn" data-s="prev" data-i18n-title="pane.prev"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>' +
+      '<button class="icon-btn" data-s="next" data-i18n-title="pane.next"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>' +
       '<span class="ps-sep"></span>' +
-      '<button class="ps-opt" data-opt="case" title="فرّق بين الحروف الكبيرة والصغيرة">Aa</button>' +
-      '<button class="ps-opt" data-opt="word" title="كلمة كاملة بس">ab</button>' +
-      '<button class="ps-opt" data-opt="regex" title="Regex">.*</button>' +
-      '<select class="ps-scope" title="دوّر فين"><option value="all">في كل حاجة</option><option value="user">رسايلي بس</option><option value="ai">ردود Claude</option><option value="tools">الأوامر ونتايجها</option></select>' +
-      '<button class="icon-btn" data-s="list" title="لستة النتايج"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>' +
-      `<button class="icon-btn" data-s="close" title="قفل البحث (Esc)">${ICON.x}</button>` +
+      '<button class="ps-opt" data-opt="case" data-i18n-title="pane.case">Aa</button>' +
+      '<button class="ps-opt" data-opt="word" data-i18n-title="pane.word">ab</button>' +
+      '<button class="ps-opt" data-opt="regex" data-i18n-title="pane.regex">.*</button>' +
+      '<select class="ps-scope" data-i18n-title="pane.scope"><option value="all" data-i18n="pane.scope.all"></option><option value="user" data-i18n="pane.scope.user"></option><option value="ai" data-i18n="pane.scope.ai"></option><option value="tools" data-i18n="pane.scope.tools"></option></select>' +
+      '<button class="icon-btn" data-s="list" data-i18n-title="pane.hit_list"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>' +
+      `<button class="icon-btn" data-s="close" data-i18n-title="pane.search_close">${ICON.x}</button>` +
       '</div><div class="ps-list" hidden></div></div>' +
       '<div class="pmain"><div class="pscroll"><div class="ppin" hidden></div><div class="pbody page"></div></div>' +
-      '<nav class="prail" aria-label="رسايلك"><div class="rail-nav">' +
-      '<button class="icon-btn" data-nav="first" title="أول السيشن (Home)"><svg viewBox="0 0 24 24"><path d="M6 11l6-6 6 6M6 18l6-6 6 6"/></svg></button>' +
-      '<button class="icon-btn" data-nav="prev" title="رسالتك اللي قبلها (Alt+↑)"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>' +
-      '<button class="icon-btn" data-nav="next" title="رسالتك اللي بعدها (Alt+↓)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>' +
-      '<button class="icon-btn" data-nav="last" title="آخر السيشن (End)"><svg viewBox="0 0 24 24"><path d="M6 6l6 6 6-6M6 13l6 6 6-6"/></svg></button>' +
-      '<button class="icon-btn rail-wide" data-nav="wide" title="وسّع / ضيّق لستة الرسايل"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>' +
+      '<nav class="prail" data-i18n-aria-label="rail.aria"><div class="rail-nav">' +
+      '<button class="icon-btn" data-nav="first" data-i18n-title="rail.first"><svg viewBox="0 0 24 24"><path d="M6 11l6-6 6 6M6 18l6-6 6 6"/></svg></button>' +
+      '<button class="icon-btn" data-nav="prev" data-i18n-title="rail.prev"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>' +
+      '<button class="icon-btn" data-nav="next" data-i18n-title="rail.next"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>' +
+      '<button class="icon-btn" data-nav="last" data-i18n-title="rail.last"><svg viewBox="0 0 24 24"><path d="M6 6l6 6 6-6M6 13l6 6 6-6"/></svg></button>' +
+      '<button class="icon-btn rail-wide" data-nav="wide" data-i18n-title="rail.wide"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>' +
       '</div><div class="rail-count"></div><div class="rail-list"></div></nav></div>' +
       '<button class="btn primary pjump" hidden></button>';
+    applyI18n(this.el); // before enhanceSelect below, which copies the select's title
     this.q = (s) => this.el.querySelector(s);
     this.scroll = this.q('.pscroll');
     this.body = this.q('.pbody');
@@ -1574,11 +1611,11 @@ class Pane {
   renderRail() {
     const list = this.prompts();
     // narrow rail: just the number; wide rail: number + word
-    const word = list.length === 1 ? 'رسالة' : 'رسايل';
+    const word = tn('rail.word', list.length);
     this.q('.rail-count').innerHTML = list.length ? `<b>${list.length}</b><span class="rc-w"> ${word}</span><span class="rc-cap">${word}</span>` : '';
-    this.q('.rail-count').title = `بعتّ ${list.length} رسالة في السيشن دي`;
+    this.q('.rail-count').title = tn('rail.count_tip', list.length);
     this.q('.rail-list').innerHTML = list.map((el, i) => {
-      const text = (el._raw || '').replace(/\s+/g, ' ').trim() || '[صورة]';
+      const text = (el._raw || '').replace(/\s+/g, ' ').trim() || t('rail.image');
       return `<button class="rail-item" data-i="${i}" title="${esc(text.slice(0, 300))}">` +
         `<span class="ri-n">${i + 1}</span><span class="ri-body"><span class="ri-t" dir="${textDir(text)}">${esc(text.slice(0, 200))}</span>` +
         `<span class="ri-time">${esc(el._time || '')}</span></span></button>`;
@@ -1703,11 +1740,11 @@ class Pane {
   // empty pane: pick a session from the sidebar or a live one here
   renderEmpty() {
     this.rail.hidden = true;
-    this.q('.ptitle').textContent = 'عمود فاضي';
-    this.q('.pmeta').textContent = 'اختار سيشن من الشريط وهتتفتح هنا';
+    this.q('.ptitle').textContent = t('pane.empty_title');
+    this.q('.pmeta').textContent = t('pane.empty_meta');
     this.q('.plive').classList.remove('live');
     this.q('.pagents').hidden = true;
-    this.body.innerHTML = `<div class="vempty-in"><p>اضغط على أي سيشن في الشريط تتفتح في العمود ده.</p>${liveQuickList()}</div>`;
+    this.body.innerHTML = `<div class="vempty-in"><p>${t('pane.empty_body')}</p>${liveQuickList()}</div>`;
   }
 
   renderHead() {
@@ -1720,11 +1757,11 @@ class Pane {
     const ms = a ? a.mtime : s.mtime;
     const live = isLive(ms);
     this.q('.plive').classList.toggle('live', live);
-    const status = s.state === 'asking' && !a ? '<span class="ask-badge">مستنية ردك</span>'
-      : live ? '<span class="live-badge">مباشر</span>' : `<span>آخر تحديث ${ago(ms)}</span>`;
+    const status = s.state === 'asking' && !a ? `<span class="ask-badge">${t('state.asking')}</span>`
+      : live ? `<span class="live-badge">${t('pane.live')}</span>` : `<span>${t('pane.updated', { ago: ago(ms) })}</span>`;
     if (a) {
       const kind = ['subagent', a.type, a.model].filter(Boolean).join(' · ');
-      this.q('.pmeta').innerHTML = `<span>${esc(kind)}</span><span>·</span><button class="parent-link" data-parent>من: ${esc(s.title.slice(0, 50))}</button><span>·</span>${status}`;
+      this.q('.pmeta').innerHTML = `<span>${esc(kind)}</span><span>·</span><button class="parent-link" data-parent>${esc(t('pane.from', { title: s.title.slice(0, 50) }))}</button><span>·</span>${status}`;
       if (!this.title) { this.title = a.description || 'subagent'; this.q('.ptitle').textContent = this.title; }
     } else {
       this.q('.pmeta').innerHTML = `<span>${esc(p.name)}</span><span>·</span>${status}`;
@@ -1734,8 +1771,8 @@ class Pane {
     const agents = (s.agents || []).slice().sort((x, y) => (isLive(y.mtime) - isLive(x.mtime)) || (y.born - x.born));
     if (!agents.length) { bar.hidden = true; return; }
     const liveN = agents.filter((x) => isLive(x.mtime)).length;
-    bar.innerHTML = `<span class="pa-label">${agents.length === 1 ? 'subagent' : agents.length + ' subagents'}${liveN ? ` · <b>${liveN} شغال</b>` : ''}</span>` +
-      (a ? `<button class="chip pa" data-parent>${ICON.chev}السيشن الأساسية</button>` : '') +
+    bar.innerHTML = `<span class="pa-label">${tn('agents.label', agents.length)}${liveN ? ` · <b>${t('agents.live', { n: liveN })}</b>` : ''}</span>` +
+      (a ? `<button class="chip pa" data-parent>${ICON.chev}${t('pane.parent')}</button>` : '') +
       agents.map((x) => `<button class="chip pa${a && a.id === x.id ? ' cur' : ''}" data-agent="${esc(x.id)}" title="${esc([x.description, x.type, x.model].filter(Boolean).join(' · '))}">` +
         `<span class="dot${isLive(x.mtime) ? ' live' : ''}"></span><span class="pa-t" dir="auto">${esc(x.description || 'subagent')}</span></button>`).join('');
     bar.hidden = false;
@@ -1779,12 +1816,12 @@ class Pane {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const raw = b.closest('.msg')._raw;
-    if (b.dataset.act === 'copy') { toast((await copyText(raw)) ? 'الرسالة اتنسخت' : 'النسخ فشل'); return; }
+    if (b.dataset.act === 'copy') { toast((await copyText(raw)) ? t('msg.copied') : t('copy.failed')); return; }
     save();
     state.pages.push({ id: uid(), html: md(raw), name: this.title.slice(0, 40) });
     save();
     renderThumbs();
-    toast(`اتضافت كصفحة ${state.pages.length}`);
+    toast(t('pages.added_as', { n: state.pages.length }));
   }
 
   // ---------- search inside this session ----------
@@ -1820,7 +1857,7 @@ class Pane {
       // too short to be useful: clear right away instead of painting thousands of marks
       this.q('.ps-field').classList.remove('pending');
       if (this.hits.length || this.lastSig) this.runSearch(false, false, true);
-      count.textContent = q.trim() ? 'Enter للبحث' : '';
+      count.textContent = q.trim() ? t('search.enter') : '';
       return;
     }
     this.q('.ps-field').classList.add('pending');
@@ -1848,7 +1885,7 @@ class Pane {
     qi.parentElement.classList.toggle('bad', re === 'bad');
     if (!re || re === 'bad') {
       paintHighlights();
-      count.textContent = re === 'bad' ? 'Regex غلط' : '';
+      count.textContent = re === 'bad' ? t('search.bad_regex') : '';
       this.renderHitList();
       this.markRail();
       return;
@@ -1875,7 +1912,7 @@ class Pane {
     }
     if (!this.hits.length) {
       paintHighlights();
-      count.textContent = 'مفيش';
+      count.textContent = t('search.none');
       this.renderHitList();
       this.markRail();
       return;
@@ -1891,7 +1928,7 @@ class Pane {
     this.goHit(i, !keepPlace || !prev);
     this.renderHitList();
     this.markRail();
-    count.title = `${this.hits.length} نتيجة في ${Math.round(performance.now() - t0)}ms`;
+    count.title = tn('search.count_tip', this.hits.length, { ms: Math.round(performance.now() - t0) });
   }
   stepHit(d) {
     if (!this.hits.length) { if (this.q('.ps-q').value) this.runSearch(false, true); return; }
@@ -1925,11 +1962,11 @@ class Pane {
   renderHitList() {
     const list = this.q('.ps-list');
     if (list.hidden) return;
-    if (!this.hits.length) { list.innerHTML = '<div class="ps-empty">مفيش نتايج</div>'; return; }
+    if (!this.hits.length) { list.innerHTML = `<div class="ps-empty">${t('search.no_results')}</div>`; return; }
     list.innerHTML = this.hits.slice(0, 300).map((h, i) => {
       const host = h.startContainer.parentElement;
       const tool = host.closest('details.tool');
-      const kind = host.closest('.msg.user') ? 'إنت' : host.closest('.msg.ai') ? 'Claude' : tool ? tool.dataset.name : host.closest('details.tools') ? 'أوامر' : '';
+      const kind = host.closest('.msg.user') ? t('search.kind_you') : host.closest('.msg.ai') ? 'Claude' : tool ? tool.dataset.name : host.closest('details.tools') ? t('search.kind_tools') : '';
       const block = host.closest('p,li,td,th,pre,summary,.dl,h1,h2,h3,h4,blockquote') || host;
       const r = document.createRange();
       r.setStart(block, 0);
@@ -1940,7 +1977,7 @@ class Pane {
       const a = Math.max(0, off - 50), b = Math.min(full.length, off + word.length + 60);
       const snip = (a ? '…' : '') + esc(full.slice(a, off)) + '<b>' + esc(word) + '</b>' + esc(full.slice(off + word.length, b)) + (b < full.length ? '…' : '');
       return `<button class="ps-item${i === this.hitIndex ? ' cur' : ''}" data-i="${i}"><span class="ps-kind">${esc(kind)}</span><span class="ps-snip" dir="${textDir(full.slice(a, b))}">${snip.replace(/\s+/g, ' ')}</span></button>`;
-    }).join('') + (this.hits.length > 300 ? `<div class="ps-empty">أول 300 من ${this.hits.length}</div>` : '');
+    }).join('') + (this.hits.length > 300 ? `<div class="ps-empty">${t('search.first_n', { n: this.hits.length })}</div>` : '');
   }
   // dot the prompts on the rail whose part of the conversation has matches
   markRail() {
@@ -1970,12 +2007,12 @@ class Pane {
     if (todos) {
       const done = todos.filter((t) => t.status === 'completed').length;
       const now = todos.find((t) => t.status === 'in_progress');
-      sum = `<span class="pin-k">المهام</span><span class="pbar"><i style="width:${todos.length ? (done / todos.length) * 100 : 0}%"></i></span>` +
-        `<span class="count">${done}/${todos.length}</span><span class="pin-now" dir="auto">${now ? esc(now.text) : done === todos.length ? 'كله خلص' : ''}</span>`;
+      sum = `<span class="pin-k">${t('pin.tasks')}</span><span class="pbar"><i style="width:${todos.length ? (done / todos.length) * 100 : 0}%"></i></span>` +
+        `<span class="count">${done}/${todos.length}</span><span class="pin-now" dir="auto">${now ? esc(now.text) : done === todos.length ? t('pin.all_done') : ''}</span>`;
       body = todos.map((t) => `<div class="todo ${esc(t.status)}"><span class="ti">${t.status === 'completed' ? ICON.check : t.status === 'in_progress' ? '<span class="spin"></span>' : '<span class="ring"></span>'}</span><span dir="auto">${esc(t.text)}</span></div>`).join('');
     } else {
       const first = (plan.match(/^#+\s*(.+)$/m) || plan.match(/^(.+)$/m) || ['', ''])[1];
-      sum = `<span class="pin-k">الخطة</span><span class="pin-now" dir="auto">${esc(first)}</span>`;
+      sum = `<span class="pin-k">${t('pin.plan')}</span><span class="pin-now" dir="auto">${esc(first)}</span>`;
       body = md(plan);
     }
     box.innerHTML = `<details${ui.pinOpen ? ' open' : ''}><summary>${ICON.chev}${sum}</summary><div class="pin-body page">${body}</div></details>`;
@@ -2012,12 +2049,12 @@ class Pane {
         return;
       }
       if (ev.k === 'result') {
-        const t = this.tools[ev.id];
-        if (t) {
-          t.querySelector('.res').innerHTML = ev.text ? `<pre dir="auto"${ev.err ? ' class="err"' : ''}>${esc(ev.text)}</pre>` : '';
+        const tl = this.tools[ev.id];
+        if (tl) {
+          tl.querySelector('.res').innerHTML = ev.text ? `<pre dir="auto"${ev.err ? ' class="err"' : ''}>${esc(ev.text)}</pre>` : '';
           if (ev.images) {
             // screenshots stay visible under the (collapsed) tool group
-            const g = t.closest('details.tools');
+            const g = tl.closest('details.tools');
             if (!g._imgs) {
               g._imgs = document.createElement('div');
               g._imgs.className = 'imgs tool-imgs';
@@ -2025,14 +2062,14 @@ class Pane {
             }
             g._imgs.insertAdjacentHTML('beforeend', imgsHtml(ev.images));
           }
-          t.classList.remove('pending');
-          t.classList.add(ev.err ? 'bad' : 'ok');
-          t.querySelector('.st-ico').innerHTML = ev.err ? ICON.x : ICON.check;
-          if (ev.agent && !t.querySelector('.open-agent')) {
-            t.querySelector('summary').insertAdjacentHTML('beforeend',
-              `<button class="btn open-agent" data-open-agent="${esc(ev.agent)}" title="افتح سيشن الـ subagent (Ctrl+كليك في عمود جديد)">افتح</button>`);
+          tl.classList.remove('pending');
+          tl.classList.add(ev.err ? 'bad' : 'ok');
+          tl.querySelector('.st-ico').innerHTML = ev.err ? ICON.x : ICON.check;
+          if (ev.agent && !tl.querySelector('.open-agent')) {
+            tl.querySelector('summary').insertAdjacentHTML('beforeend',
+              `<button class="btn open-agent" data-open-agent="${esc(ev.agent)}" title="${esc(t('agents.open_tip'))}">${t('agents.open')}</button>`);
           }
-          touched.add(t.closest('details.tools'));
+          touched.add(tl.closest('details.tools'));
         }
         return;
       }
@@ -2075,7 +2112,7 @@ class Pane {
         if (this.pendingUser && ev.text.startsWith(this.pendingUser._raw.trim())) this.pendingUser.remove();
         el = document.createElement('div');
         el.className = 'msg user';
-        el.innerHTML = `<div class="who">${this.key.agent ? 'المهمة اللي اتبعتت للـ subagent' : ev.queued ? 'إنت (وهو شغال)' : 'إنت'} · ${hhmm(ev.ts)}</div>${md(ev.text)}${ev.images ? `<div class="imgs">${imgsHtml(ev.images)}</div>` : ''}`;
+        el.innerHTML = `<div class="who">${t(this.key.agent ? 'msg.agent_task' : ev.queued ? 'msg.you_queued' : 'msg.you')} · ${hhmm(ev.ts)}</div>${md(ev.text)}${ev.images ? `<div class="imgs">${imgsHtml(ev.images)}</div>` : ''}`;
         el._raw = ev.text;
         el._time = hhmm(ev.ts);
         this.pendingUser = el;
@@ -2084,13 +2121,13 @@ class Pane {
         this.pendingUser = null;
         el = document.createElement('div');
         el.className = 'msg ai';
-        el.innerHTML = md(ev.text) + `<div class="msg-actions"><button class="icon-btn" data-act="copy" title="نسخ الرسالة (Markdown)">${ICON.copy}</button>` +
-          `<button class="icon-btn" data-act="page" title="حطها في صفحة جديدة">${ICON.page}</button></div>`;
+        el.innerHTML = md(ev.text) + `<div class="msg-actions"><button class="icon-btn" data-act="copy" title="${esc(t('msg.copy_tip'))}">${ICON.copy}</button>` +
+          `<button class="icon-btn" data-act="page" title="${esc(t('msg.to_page_tip'))}">${ICON.page}</button></div>`;
         el._raw = ev.text;
       } else if (ev.k === 'thinking') {
         el = document.createElement('details');
         el.className = 'thinking';
-        el.innerHTML = `<summary>تفكير</summary><div class="th-body">${md(ev.text)}</div>`;
+        el.innerHTML = `<summary>${t('msg.thinking')}</summary><div class="th-body">${md(ev.text)}</div>`;
       } else if (ev.k === 'note') {
         el = document.createElement('div');
         el.className = 'note';
@@ -2098,7 +2135,7 @@ class Pane {
       } else if (ev.k === 'divider') {
         el = document.createElement('div');
         el.className = 'divider';
-        el.textContent = 'المحادثة اتضغطت هنا';
+        el.textContent = t('msg.compacted');
       }
       if (el) { frag.append(el); added++; }
     });
@@ -2113,7 +2150,7 @@ class Pane {
     else if (added && !this.restoring && this.body.children.length) {
       this.unseen += added;
       const j = this.q('.pjump');
-      j.textContent = `↓ ${this.unseen} جديد`;
+      j.textContent = t('pane.jump', { n: this.unseen });
       j.hidden = false;
     }
   }
@@ -2121,10 +2158,10 @@ class Pane {
 
 // ---------- AskUserQuestion ----------
 function askHtml(questions) {
-  return `<div class="ask-head"><span class="ask-ico">?</span><span class="ask-title">Claude سألك</span><span class="ask-state">مستني ردك في التيرمينال</span></div>` +
+  return `<div class="ask-head"><span class="ask-ico">?</span><span class="ask-title">${t('ask.title')}</span><span class="ask-state">${t('ask.waiting')}</span></div>` +
     questions.map((q, qi) => `<div class="ask-q" data-q="${qi}">` +
       (q.header ? `<span class="ask-chip">${esc(q.header)}</span>` : '') +
-      `<div class="ask-text" dir="${textDir(q.question)}">${inline(q.question)}${q.multi ? ' <span class="ask-multi">(اختيار متعدد)</span>' : ''}</div>` +
+      `<div class="ask-text" dir="${textDir(q.question)}">${inline(q.question)}${q.multi ? ` <span class="ask-multi">${t('ask.multi')}</span>` : ''}</div>` +
       `<div class="ask-opts">` + q.options.map((o) => `<div class="ask-opt" data-label="${esc(o.label)}">` +
         `<span class="ask-mark"></span><span class="ask-o"><b dir="${textDir(o.label)}">${esc(o.label)}</b>` +
         (o.description ? `<span dir="${textDir(o.description)}">${esc(o.description)}</span>` : '') + `</span></div>`).join('') +
@@ -2135,9 +2172,9 @@ function askHtml(questions) {
 function markAnswers(card, ev) {
   card.classList.remove('pending');
   const state = card.querySelector('.ask-state');
-  if (ev.err) { card.classList.add('declined'); state.textContent = 'اتلغى من غير رد'; return; }
+  if (ev.err) { card.classList.add('declined'); state.textContent = t('ask.declined'); return; }
   card.classList.add('answered');
-  state.textContent = 'اتجاوب';
+  state.textContent = t('ask.answered');
   let answers = ev.answers && typeof ev.answers === 'object' ? ev.answers : null;
   if (!answers) {
     answers = {};
@@ -2147,7 +2184,10 @@ function markAnswers(card, ev) {
   }
   const values = Object.values(answers);
   card.querySelectorAll('.ask-q').forEach((qEl, qi) => {
-    const qText = qEl.querySelector('.ask-text').textContent.replace(/\s*\(اختيار متعدد\)$/, '').trim();
+    const textEl = qEl.cloneNode(true).querySelector('.ask-text');
+    const multi = textEl.querySelector('.ask-multi');
+    if (multi) multi.remove();
+    const qText = textEl.textContent.trim();
     const ans = String(answers[qText] != null ? answers[qText] : values[qi] != null ? values[qi] : '');
     const picked = new Set(ans.split(/\s*,\s*/).map((x) => x.trim()).filter(Boolean));
     let matched = false;
@@ -2157,7 +2197,7 @@ function markAnswers(card, ev) {
       if (on) matched = true;
     });
     const custom = qEl.querySelector('.ask-custom');
-    if (ans && !matched) { custom.hidden = false; custom.innerHTML = `<b>ردك:</b> <span dir="${textDir(ans)}">${esc(ans)}</span>`; }
+    if (ans && !matched) { custom.hidden = false; custom.innerHTML = `<b>${t('ask.your_answer')}</b> <span dir="${textDir(ans)}">${esc(ans)}</span>`; }
   });
 }
 
@@ -2168,7 +2208,7 @@ function updateGroup(g) {
   const last = tools[tools.length - 1];
   const n = tools.length;
   const status = pending ? '<span class="st-ico"><span class="spin"></span></span>' : bad ? `<span class="st-ico bad">${ICON.x}</span>` : `<span class="st-ico ok">${ICON.check}</span>`;
-  const label = n === 1 ? 'أمر واحد' : n === 2 ? 'أمرين' : `${n} أوامر`;
+  const label = tn('tools.count', n);
   g.querySelector('summary').innerHTML = `${ICON.chev}${status}<span>${label}</span>` +
     (last ? `<span class="g-last" dir="auto"><b>${esc(last.dataset.name)}</b> ${esc(last.dataset.sum)}</span>` : '');
 }
@@ -2179,7 +2219,7 @@ function layoutPanes() {
   panes.forEach((p) => p.el.classList.toggle('active', p === activePane && panes.length > 1));
 }
 function addPane() {
-  if (panes.length >= MAX_PANES) { toast(`أقصى عدد ${MAX_PANES} أعمدة`); return activePane; }
+  if (panes.length >= MAX_PANES) { toast(t('pane.max', { n: MAX_PANES })); return activePane; }
   const p = new Pane();
   const i = activePane ? panes.indexOf(activePane) + 1 : panes.length;
   panes.splice(i, 0, p);
@@ -2245,8 +2285,8 @@ $('lightbox').addEventListener('click', (e) => { if (!e.target.closest('a')) lbC
 document.addEventListener('keydown', (e) => {
   if ($('lightbox').hidden) return;
   if (e.key === 'Escape') { e.preventDefault(); lbClose(); }
-  else if (e.key === 'ArrowLeft') { e.preventDefault(); lbShow(null, lbIndex + 1); } // RTL: left = next
-  else if (e.key === 'ArrowRight') { e.preventDefault(); lbShow(null, lbIndex - 1); }
+  else if (e.key === (isRtl() ? 'ArrowLeft' : 'ArrowRight')) { e.preventDefault(); lbShow(null, lbIndex + 1); } // next points the way text runs
+  else if (e.key === (isRtl() ? 'ArrowRight' : 'ArrowLeft')) { e.preventDefault(); lbShow(null, lbIndex - 1); }
 }, true);
 
 // keep polling in a background tab when notifications are on, so they can fire
@@ -2264,11 +2304,11 @@ function checkTransitions() {
     if (s.state === 'asking') waiting++;
     const prev = prevStates && prevStates[s.id];
     if (!prev || prev === s.state) return;
-    if (prev === 'working' && s.state === 'idle') notify(p, s, 'خلّصت');
-    else if (s.state === 'asking') notify(p, s, 'مستنية ردك');
+    if (prev === 'working' && s.state === 'idle') notify(p, s, t('notify.finished'));
+    else if (s.state === 'asking') notify(p, s, t('state.asking'));
   }));
   prevStates = states;
-  document.title = waiting ? `(${waiting}) Pad` : 'Pad';
+  document.title = waiting ? `(${waiting}) Marsad` : 'Marsad';
 }
 function notify(p, s, what) {
   if (!ui.notify || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -2287,15 +2327,15 @@ function renderNotifyBtn() {
   const on = ui.notify && 'Notification' in window && Notification.permission === 'granted';
   b.classList.toggle('on', on);
   b.innerHTML = on ? ICON.bell : ICON.bellOff;
-  b.title = on ? 'الإشعارات شغالة: لما سيشن تخلّص أو تستنى ردك' : 'شغّل إشعارات السيشنز';
+  b.title = t(on ? 'notify.on_tip' : 'notify.off_tip');
 }
 $('notifyBtn').onclick = async () => {
-  if (!('Notification' in window)) { toast('المتصفح ده مش بيدعم الإشعارات'); return; }
-  if (ui.notify) { ui.notify = false; toast('الإشعارات اتقفلت'); }
+  if (!('Notification' in window)) { toast(t('notify.unsupported')); return; }
+  if (ui.notify) { ui.notify = false; toast(t('notify.turned_off')); }
   else {
     const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
-    if (perm !== 'granted') { toast('المتصفح رافض الإشعارات، فعّلها من إعدادات الموقع'); ui.notify = false; }
-    else { ui.notify = true; toast('هيوصلك إشعار لما سيشن تخلّص أو تستنى ردك'); }
+    if (perm !== 'granted') { toast(t('notify.denied')); ui.notify = false; }
+    else { ui.notify = true; toast(t('notify.turned_on')); }
   }
   saveUi();
   renderNotifyBtn();
@@ -2311,7 +2351,7 @@ function applyContentWidth() {
 function renderWidthMenu() {
   $('widthMenu').innerHTML = WIDTH_ORDER.map((k) => {
     const w = WIDTHS[k];
-    return `<button data-w="${k}" class="${k === ui.contentW ? 'on' : ''}"><span class="bar"><i style="width:${w.bar}%"></i></span>${w.label}<span class="k">${w.hint}</span></button>`;
+    return `<button data-w="${k}" class="${k === ui.contentW ? 'on' : ''}"><span class="bar"><i style="width:${w.bar}%"></i></span>${t(w.label)}<span class="k">${w.hintKey ? t(w.hintKey) : w.hint}</span></button>`;
   }).join('');
 }
 function setContentWidth(k) {
@@ -2324,8 +2364,10 @@ function openWidthMenu(btn) {
   if (!m.hidden) { m.hidden = true; return; }
   const r = btn.getBoundingClientRect();
   m.style.top = r.bottom + 6 + 'px';
-  m.style.left = Math.max(8, r.left) + 'px';
   m.hidden = false;
+  // open toward the side with room: the width button sits at the pane's end edge
+  const left = isRtl() ? r.left : r.right - m.offsetWidth;
+  m.style.left = Math.max(8, Math.min(left, innerWidth - m.offsetWidth - 8)) + 'px';
 }
 $('widthMenu').addEventListener('click', (e) => {
   const b = e.target.closest('[data-w]');
@@ -2337,7 +2379,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('#widthMenu,[d
 function stepWidth(d) {
   const i = Math.max(0, Math.min(WIDTH_ORDER.length - 1, WIDTH_ORDER.indexOf(ui.contentW) + d));
   setContentWidth(WIDTH_ORDER[i]);
-  toast('عرض المحتوى: ' + WIDTHS[WIDTH_ORDER[i]].label);
+  toast(t('width.toast', { name: t(WIDTHS[WIDTH_ORDER[i]].label) }));
 }
 
 // =====================================================================
@@ -2368,7 +2410,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.altKey && (e.key === '1' || e.key === '2')) { e.preventDefault(); setTab(e.key === '1' ? 'pages' : 'sessions'); }
   else if (e.ctrlKey && e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && ui.tab === 'sessions') {
     e.preventDefault();
-    stepWidth(e.key === 'ArrowLeft' ? 1 : -1);
+    stepWidth(e.key === (isRtl() ? 'ArrowLeft' : 'ArrowRight') ? 1 : -1); // wider = toward the start side
   }
   else if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); addPage(); }
   else if (e.altKey && e.key === 'ArrowUp' && ui.tab === 'pages') { e.preventDefault(); go(state.cur - 1); }
@@ -2411,6 +2453,7 @@ function restorePanes(restoring) {
   readHash();
   applyWidth(ui.sidew);
   applyTheme();
+  renderLangBtn();
   document.body.classList.toggle('collapsed', !!ui.collapsed);
   sourceState = await SRC.init();
   setServerUi(sourceState === 'ready');
