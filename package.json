@@ -1,6 +1,6 @@
 {
   "name": "marsad",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Watch your Claude Code sessions live in the browser: split view, subagents, diffs, search, notes. Local-only.",
   "keywords": ["claude-code", "claude", "ai-agents", "transcripts", "viewer", "developer-tools", "rtl"],
   "homepage": "https://mohamedeslam04.github.io/marsad/",
