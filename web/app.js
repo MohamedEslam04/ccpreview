@@ -355,6 +355,14 @@ function mdList(lines, i) {
   return { html, i };
 }
 
+// A paragraph whose lines are in different languages ("Do this.\nعشان كده…"): each line gets its own
+// direction, so an English line reads left-to-right inside an Arabic message and the other way round.
+function paraHtml(lines) {
+  const dir = textDir(lines.join(' '));
+  const dirs = lines.map(textDir);
+  if (lines.length < 2 || dirs.every((d) => d === 'auto' || d === dir)) return `<p dir="${dir}">${lines.map(inline).join('<br>')}</p>`;
+  return `<p dir="${dir}">${lines.map((l, j) => `<span class="pl" dir="${dirs[j] === 'auto' ? dir : dirs[j]}">${inline(l)}</span>`).join('')}</p>`;
+}
 function md(src) {
   const lines = src.replace(/\r/g, '').split('\n');
   const out = [];
@@ -412,7 +420,7 @@ function md(src) {
     }
     const p = [];
     while (i < lines.length && lines[i].trim() && !(p.length && blockStart(lines[i], lines[i + 1]))) p.push(lines[i++].trim());
-    out.push(`<p dir="${textDir(p.join(' '))}">${p.map(inline).join('<br>')}</p>`);
+    out.push(paraHtml(p));
   }
   return out.join('');
 }
@@ -1358,8 +1366,9 @@ function lineDiff(a, b) {
     let i = 0, j = 0;
     while (i < n || j < m) {
       if (i < n && j < m && a2[i] === b2[j]) { mid.push([' ', a2[i]]); i++; j++; }
-      else if (j < m && (i >= n || dp[i * (m + 1) + j + 1] >= dp[(i + 1) * (m + 1) + j])) { mid.push(['+', b2[j]]); j++; }
-      else { mid.push(['-', a2[i]]); i++; }
+      // on a tie take the removal first, so a replaced line reads "- old" then "+ new"
+      else if (i < n && (j >= m || dp[(i + 1) * (m + 1) + j] >= dp[i * (m + 1) + j + 1])) { mid.push(['-', a2[i]]); i++; }
+      else { mid.push(['+', b2[j]]); j++; }
     }
   }
   return [...A.slice(0, pre).map((s) => [' ', s]), ...mid, ...A.slice(A.length - suf).map((s) => [' ', s])];

@@ -259,6 +259,7 @@
   .msg.ai { margin: 16px 0; }
   .msg.ai + .msg.ai { margin-top: 22px; }
   .pbody p { margin: .7em 0; }
+  .pl { display: block; } /* one line of a mixed-language paragraph, with its own direction */
   .pbody li { margin: .35em 0; }
   .pbody details.tools { margin: 12px 0; }
   .msg.user + details.tools, details.tools + .msg.ai, .tool-imgs + .msg.ai { margin-top: 18px; }
