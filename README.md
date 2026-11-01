@@ -1,26 +1,67 @@
 # Marsad
 
-A local, privacy-first web viewer for your Claude Code sessions. Watch them live, side by side, with diffs, subagents, search and notes.
+**See what Claude Code is doing, live, in your browser.**
 
-![Marsad](docs/screenshot.png)
+Marsad (مرصد, Arabic for "observatory") reads the transcripts Claude Code already writes to `~/.claude/projects` and turns them into a readable, searchable view: every session, its messages, tool calls, file diffs, subagents, plans, questions and token use, updating as Claude works. It runs on your machine, never talks to Claude, and never uploads anything.
 
-Marsad (مرصد) is Arabic for "observatory". It reads the transcripts Claude Code already writes to `~/.claude/projects` and shows them in a browser. It never talks to Claude and never uploads anything.
+```sh
+npx marsad
+```
+
+![Two Claude Code sessions side by side in Marsad: a live session with its subagents, task list and an answered question, next to a plan-mode session](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/hero.png)
+
+## Who it's for
+
+- You run long Claude Code sessions and want to follow them without scrolling a terminal.
+- You run several sessions or background subagents at once and want to see which are working, which finished and which are waiting for you.
+- You want to go back to what Claude did yesterday: which files it changed, what it ran, what you answered.
+- You write in Arabic (or mix Arabic and English) and want text that reads in the right direction.
 
 ## Features
 
-- Live view: sessions update as Claude Code writes them.
-- Session list grouped by project or by day, with quick filters (live, waiting for you, open, pinned), a date filter and a title filter.
+### Follow sessions live
+- Sessions update as Claude Code writes them, with a "Live" marker and a count of new messages when you're scrolled up.
+- Session list grouped by project or by day, with filters: live, waiting for you, open, pinned, a date range and a title search.
 - Up to 4 sessions side by side.
-- Subagent transcripts, with a subagents bar per session.
-- Message rail per session, with jump navigation.
-- In-session search: Arabic-aware matching, regex, whole word, and a scope selector.
-- Diffs for `Edit`, `MultiEdit` and `Write` calls.
-- Pinned plan (`ExitPlanMode`) and todo list (`TodoWrite`).
-- `AskUserQuestion` cards that show the answer you picked.
-- Images and screenshots, with a lightbox.
-- Notifications when a session finishes or waits for you.
-- Notes pad: pages with thumbnails. Pasting a terminal box-drawing table or markdown turns it into a real table.
-- English and Arabic UI (right-to-left), light and dark theme.
+- Desktop notifications when a session finishes or is waiting for your answer.
+
+### Read what happened
+- Messages rendered as markdown: tables, code, lists. Pasted screenshots show inline.
+- Tool calls grouped per turn, with the command or file in the summary and the full output one click away.
+- Diffs for `Edit`, `MultiEdit` and `Write`.
+- The plan (`ExitPlanMode`) and task list (`TodoWrite`) pinned at the top of the session, with progress.
+- `AskUserQuestion` cards that show every option and the one you picked.
+- A message rail to jump between your messages, and keys to step through them.
+- Search inside a session: Arabic-aware matching, regex, whole word, and a scope selector (everything, your messages, Claude's replies, tool calls).
+
+![A file diff and the subagent calls inside a turn](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/diff.png)
+
+### Subagents
+- A subagents bar per session: each agent's task, type and state (running, done, stopped), and one click to open its own transcript.
+- Subagents also appear under their session in the sidebar.
+
+### Session info
+Press `i` or the info button for a panel with:
+- **Context now**: how much of the context window the latest request used, and when the conversation was last compacted.
+- **Mode and effort**: the permission mode (`auto`, `plan`, ...) and the effort level.
+- **Billed tokens**: input, output, cache reads and cache writes over all requests.
+- **Git** (with `npx marsad`): branch, unpushed commits, staged, modified and untracked files, and the last commit.
+- Model, duration, folder, tool counts and the files the session changed (click one to jump to its last edit).
+
+![The session info panel: context size, mode and effort, tokens and git status](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/info.png)
+
+### Images
+- A viewer with zoom (wheel, `+` `-`, double-click), drag to pan, fit and actual size, image properties, copy, and a thumbnail strip with a hover preview of every image in the session.
+
+### Arabic and right-to-left
+- English and Arabic UI, picked from your browser language, with a toggle.
+- Each paragraph and line takes the direction of the language most of it is written in, so a line of English inside an Arabic message reads left to right, and the other way round.
+- Light and dark themes.
+
+![Marsad in Arabic with the dark theme](https://raw.githubusercontent.com/MohamedEslam04/marsad/main/docs/screenshots/arabic-dark.png)
+
+### Notes pad
+- Pages with thumbnails for keeping notes next to your sessions. Pasting a terminal box-drawing table or markdown turns it into a real table.
 
 ## Quick start
 
@@ -91,6 +132,8 @@ On Linux, systemd socket activation starts Marsad the first time you open `http:
 | `Ctrl+Enter` | New notes page |
 | `Ctrl+Shift+V` | Paste as plain text (skips the table and markdown conversion) |
 | `Left`, `Right` | Next / previous image in the lightbox |
+| `i` | Show or hide the session info panel |
+| `+`, `-`, `0`, `1` | Zoom in, zoom out, fit, actual size in the image viewer |
 
 ## Browser support
 
@@ -125,11 +168,21 @@ npm test           # node:test, no dependencies
 
 ## بالعربي
 
-مرصد عارض محلي لجلسات Claude Code في المتصفح. بيقرأ ملفات الـ transcripts اللي Claude Code بيكتبها في `~/.claude/projects` وبيعرضها لحظة بلحظة: لحد 4 جلسات جنب بعض، الـ subagents، الـ diffs، البحث (بيفهم العربي)، وصفحة ملاحظات. الواجهة عربي وإنجليزي، فاتح وغامق.
+مرصد بيوريك Claude Code بيعمل إيه دلوقتي، في المتصفح. بيقرا ملفات الـ transcripts اللي Claude Code بيكتبها في `~/.claude/projects` ويعرضها وهي بتتحدّث، من غير ما يكلّم Claude ومن غير ما يرفع أي حاجة.
 
-- التشغيل: `npx marsad` ثم افتح `http://127.0.0.1:4747`. بيشتغل في كل المتصفحات.
-- من غير تثبيت: افتح <https://mohamedeslam04.github.io/marsad/> واختار مجلد `~/.claude/projects` مرة واحدة (Chrome أو Edge). لو المجلد مخفي: `Ctrl+H` على لينكس، `Cmd+Shift+.` على ماك.
-- الخصوصية: مفيش حاجة بتترفع لأي مكان. السيرفر على `127.0.0.1` بس، والوصول للمجلد للقراءة فقط. الملاحظات محفوظة في `~/.marsad/pages.json` (وضع السيرفر) أو في `localStorage` (وضع المجلد).
+- **متابعة لحظة بلحظة:** كل السيشنز متقسمة حسب المشروع أو اليوم، فلاتر (شغالة، مستنياك، مفتوحة، متثبتة، تاريخ)، لحد 4 سيشنز جنب بعض، وإشعار لما سيشن تخلص أو تستناك ترد.
+- **تقرا اللي حصل:** الرسايل بالـ markdown والجداول، الأوامر متجمعة في كل دور، الـ diffs بتاعة الملفات، الخطة وقايمة المهام متثبتين فوق، كروت أسئلة `AskUserQuestion` والإجابة اللي اخترتها، وبحث جوه السيشن بيفهم العربي.
+- **الـ subagents:** شريط لكل سيشن فيه كل agent ومهمته وحالته، وتفتح الـ transcript بتاعه بضغطة.
+- **معلومات السيشن (زرار `i`):** الكونتكست دلوقتي ونسبته من الشباك وآخر ضغط، المود والإيفورت، التوكنز المتحاسبة، وحالة git (الفرع، الـ commits اللي لسه ما اترفعتش، الملفات المتعدّلة) مع `npx marsad`.
+- **الصور:** عارض فيه زوم وسحب وخصائص الصورة وشريط مصغّرات بمعاينة لما تقف عليها.
+- **عربي صح:** الواجهة عربي وإنجليزي، وكل سطر بياخد اتجاه اللغة الغالبة فيه، فاللي مكتوب إنجليزي بيتقري من الشمال واللي عربي من اليمين. فاتح وغامق.
+- **صفحة ملاحظات:** صفحات بمصغّرات، ولو لزقت جدول من التيرمينال أو markdown بيتحوّل لجدول حقيقي.
+
+التشغيل:
+
+- `npx marsad` وبعدين افتح `http://127.0.0.1:4747`. بيشتغل في كل المتصفحات ومحتاج Node 18 أو أحدث.
+- من غير تثبيت: افتح <https://mohamedeslam04.github.io/marsad/> واختار فولدر `~/.claude/projects` مرة واحدة (Chrome أو Edge). لو الفولدر مستخبي: `Ctrl+H` على لينكس، `Cmd+Shift+.` على ماك. حالة git محتاجة `npx marsad`.
+- الخصوصية: مفيش حاجة بتترفع لأي مكان. السيرفر على `127.0.0.1` بس، والوصول للفولدر قراية بس. الملاحظات في `~/.marsad/pages.json` (السيرفر) أو في `localStorage` (الفولدر).
 
 ## Disclaimer
 
@@ -138,3 +191,7 @@ Marsad is an independent project and is not affiliated with or endorsed by Anthr
 ## License
 
 [MIT](LICENSE)
+
+---
+
+Docs synced to commit 92198e5 ("copy(info): describe permission modes and effort levels instead of repeating their names", 2026-11-01).
