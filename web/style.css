@@ -716,3 +716,43 @@ details.thinking .th-body { padding: 4px 12px; border-inline-start: 2px solid va
 .pw-opts { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 6px; }
 .pw-opts b { display: block; font-weight: 600; }
 .pw-opts span { display: block; color: var(--muted); font-size: 13.5px; }
+
+/* ---------- first-run guide (hosted page, nothing connected yet) ---------- */
+.vempty.is-welcome { display: block; place-content: initial; text-align: start; padding: clamp(24px, 6vh, 72px) 24px 48px; }
+.welcome { max-width: 600px; margin: 0 auto; color: var(--fg); font-size: 15px; line-height: 1.65; }
+.w-head { display: flex; align-items: center; gap: 16px; margin-bottom: 32px; }
+.w-head img { flex: none; border-radius: 12px; }
+.w-head h1 { margin: 0 0 2px; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.w-head p { margin: 0; color: var(--muted); font-size: 15px; }
+.w-body h2 { margin: 0 0 14px; font-size: 17px; }
+.w-body > p { margin: 0 0 14px; color: var(--muted); }
+.w-steps { list-style: none; margin: 0; padding: 0; counter-reset: wstep; display: flex; flex-direction: column; gap: 18px; }
+.w-steps li { counter-increment: wstep; position: relative; padding-inline-start: 42px; min-height: 28px; }
+.w-steps li::before { content: counter(wstep); position: absolute; inset-inline-start: 0; top: 0; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--accent); background: var(--accent-soft); }
+.w-steps li p { margin: 2px 0 8px; }
+.w-steps kbd { font-size: 12px; }
+.w-copy { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 4px 4px 4px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raised); }
+.w-copy code { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; min-width: min(12ch, 50vw); background: none; padding: 0; }
+.w-copy .btn { height: 28px; padding: 0 10px; flex: none; }
+.w-copy .btn svg { width: 14px; height: 14px; }
+.w-copy .btn.done { color: var(--live); border-color: color-mix(in oklch, var(--live) 50%, transparent); }
+.btn.big { height: 42px; padding: 0 20px; font-size: 15px; }
+.w-body > .w-alt { margin: 26px 0 8px; color: var(--muted); }
+.w-alt a { color: var(--accent); }
+.w-err { margin: 18px 0 0; padding: 10px 14px; border-radius: var(--r); border: 1px solid color-mix(in oklch, var(--err) 45%, transparent);
+  background: color-mix(in oklch, var(--err) 9%, transparent); color: var(--fg); }
+.w-safe { display: flex; align-items: center; gap: 8px; margin: 32px 0 0; padding-top: 18px; border-top: 1px solid var(--line-soft, var(--line)); color: var(--muted); font-size: 13.5px; }
+.w-safe svg { flex: none; width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+.w-dev { margin-top: 14px; color: var(--muted); font-size: 13.5px; }
+.w-dev summary { cursor: pointer; width: fit-content; }
+.w-dev summary:hover { color: var(--fg); }
+.w-dev p { margin: 8px 0; }
+.empty.connect .btn { margin-top: 8px; }
+@media (max-width: 720px) {
+  /* setup on a narrow screen: the guide gets the whole width */
+  body.needs-setup #side { display: none; }
+  .w-head { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .w-head h1 { font-size: 21px; }
+}
+.keys { unicode-bidi: isolate; white-space: nowrap; }

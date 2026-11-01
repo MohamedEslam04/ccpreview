@@ -24,6 +24,7 @@ const WIDTHS = {
 const WIDTH_ORDER = ['sm', 'md', 'lg', 'full'];
 
 const ICON = {
+  lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
@@ -38,7 +39,7 @@ const ICON = {
 };
 
 let state = { pages: [{ html: '', name: '' }], cur: 0 };
-let ui = { tab: 'pages', sess: null, panes: [], activePane: 0, sidew: DEFAULT_W, collapsed: false, theme: 'auto', shut: [], edScroll: {}, viewScroll: {}, openAgents: [], closedAgents: [], contentW: 'md' };
+let ui = { tab: 'sessions', sess: null, panes: [], activePane: 0, sidew: DEFAULT_W, collapsed: false, theme: 'auto', shut: [], edScroll: {}, viewScroll: {}, openAgents: [], closedAgents: [], contentW: 'md' };
 
 // =====================================================================
 // helpers
@@ -514,6 +515,7 @@ async function connectFolder(again) {
   try {
     if (again) await SRC.reconnect(); else await SRC.pick();
     sourceState = 'ready';
+    welcomeError = '';
     setServerUi(true);
     sess.list = null;
     renderSessions();
@@ -522,7 +524,9 @@ async function connectFolder(again) {
     setTab(ui.tab);
   } catch (e) {
     if (e && e.name === 'AbortError') return; // closed the picker
-    toast(e && e.message === 'not-projects' ? t('srv.not_projects') : t('srv.folder_failed'));
+    welcomeError = e && e.message === 'not-projects' ? t('welcome.wrong_folder') : t('welcome.no_access');
+    toast(welcomeError);
+    renderEmptyView();
   }
 }
 $('srvBtn').onclick = async () => {
@@ -923,8 +927,10 @@ function setTab(tab) {
   $('pagesPane').hidden = tab !== 'pages';
   $('sessionsPane').hidden = tab !== 'sessions';
   $('edWrap').hidden = tab !== 'pages';
-  panesEl.hidden = tab !== 'sessions' || !panes.length;
-  $('vempty').hidden = tab !== 'sessions' || panes.length > 0;
+  // nothing connected yet (hosted page): the setup guide takes the whole view, even if old panes were restored
+  const setup = !SERVER && sourceState !== 'ready';
+  panesEl.hidden = tab !== 'sessions' || !panes.length || setup;
+  $('vempty').hidden = tab !== 'sessions' || (panes.length > 0 && !setup);
   tblbar.hidden = true;
   updateBlank();
   if (tab === 'sessions') { renderSessions(); renderEmptyView(); loadSessions(); }
@@ -969,20 +975,10 @@ async function loadSessions() {
 function connectHtml() {
   const npx = '<code dir="ltr">npx ccpreview</code>';
   if (SERVER) return `<div class="empty">${t('connect.stopped')}<br><br><button class="btn primary" data-start>${t('srv.start')}</button><p class="connect-hint">${t('connect.stopped_hint', { cmd: npx })}</p></div>`;
-  if (sourceState === 'unsupported') {
-    return `<div class="empty connect"><b>${t('connect.unsupported')}</b>` +
-      `<p>${t('connect.unsupported_use')}</p><pre dir="ltr">${npx.replace(/<\/?code[^>]*>/g, '')}</pre>` +
-      `<p class="connect-hint">${t('connect.brave', { flag: '<code dir="ltr">brave://flags/#file-system-access-api</code>' })}</p></div>`;
-  }
-  if (sourceState === 'needs-permission') {
-    return `<div class="empty connect"><b>${t('connect.permission', { name: esc(SRC.folderName) })}</b>` +
-      `<br><br><button class="btn primary" data-reconnect>${t('connect.allow')}</button></div>`;
-  }
-  return `<div class="empty connect"><b>${t('connect.title')}</b>` +
-    `<p>${t('connect.pick_text', { path: '<code dir="ltr">~/.claude/projects</code>' })}</p>` +
-    `<button class="btn primary" data-pick>${t('connect.pick')}</button>` +
-    `<p class="connect-hint">${t('connect.hidden', { linux: '<kbd>Ctrl</kbd>+<kbd>H</kbd>', mac: '<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd>' })}</p>` +
-    `<p class="connect-hint">${t('connect.or_run', { cmd: npx })}</p></div>`;
+  // hosted page: the full guide is in the main view; the sidebar only points at it
+  const btn = sourceState === 'needs-permission' ? `<button class="btn primary" data-reconnect>${t('connect.allow')}</button>`
+    : sourceState === 'unsupported' ? '' : `<button class="btn primary" data-pick>${t('connect.pick')}</button>`;
+  return `<div class="empty connect"><p>${t('side.setup')}</p>${btn}</div>`;
 }
 
 const isLive = (ms) => Date.now() - ms < 90e3;
@@ -1270,14 +1266,69 @@ function liveQuickList() {
   return live.length ? '<div class="quick">' + live.map(({ p, s }) =>
     `<button class="btn" data-dir="${esc(p.dir)}" data-id="${esc(s.id)}"><span class="dot live"></span><span dir="auto">${esc(s.title)}</span><span class="count">${esc(p.name)}</span></button>`).join('') + '</div>' : '';
 }
+// ---------- first run: a step-by-step guide for people who never used a terminal ----------
+const OS = (() => {
+  const p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '').toLowerCase();
+  return p.includes('mac') ? 'mac' : p.includes('win') ? 'win' : 'linux';
+})();
+let IS_BRAVE = false;
+const IS_PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+let welcomeError = '';
+const BRAVE_FLAG = 'brave://flags/#file-system-access-api';
+const copyRow = (text, label) => `<span class="w-copy" dir="ltr"><code>${esc(text)}</code><button class="btn" data-copy-text="${esc(text)}">${ICON.copy}<span>${esc(label || t('welcome.copy'))}</span></button></span>`;
+function welcomeHtml() {
+  const head = `<header class="w-head"><img src="logo.svg" alt="" width="44" height="44"><div><h1>${t('welcome.title')}</h1><p>${t('welcome.sub')}</p></div></header>`;
+  const safe = `<p class="w-safe">${ICON.lock || ''}${t('welcome.safe')}</p>`;
+  const dev = `<details class="w-dev"><summary>${t('welcome.dev')}</summary><p>${t('welcome.dev_text')}</p>${copyRow('npx ccpreview')}</details>`;
+  let body;
+  if (sourceState === 'needs-permission') {
+    body = `<h2>${t('welcome.back')}</h2><p>${t('welcome.back_text', { name: `<b dir="auto">${esc(SRC.folderName || '')}</b>` })}</p>` +
+      `<button class="btn primary big" data-reconnect>${t('connect.allow')}</button>`;
+  } else if (sourceState === 'unsupported' && IS_PHONE) {
+    body = `<h2>${t('welcome.phone_title')}</h2><p>${t('welcome.phone_text')}</p>${copyRow(location.href.split('#')[0], t('welcome.copy_link'))}`;
+  } else if (sourceState === 'unsupported' && IS_BRAVE) {
+    body = `<h2>${t('welcome.brave_title')}</h2><ol class="w-steps">` +
+      `<li><p>${t('welcome.brave_1')}</p>${copyRow(BRAVE_FLAG)}</li>` +
+      `<li><p>${t('welcome.brave_2')}</p></li>` +
+      `<li><p>${t('welcome.brave_3', { on: `<b>${t('welcome.enabled')}</b>` })}</p></li>` +
+      `<li><p>${t('welcome.brave_4', { btn: `<b>${t('welcome.relaunch')}</b>` })}</p></li></ol>` +
+      `<p class="w-alt">${t('welcome.or_chrome')}</p>${copyRow(location.href.split('#')[0], t('welcome.copy_link'))}`;
+  } else if (sourceState === 'unsupported') {
+    body = `<h2>${t('welcome.browser_title')}</h2><p>${t('welcome.browser_text')}</p>${copyRow(location.href.split('#')[0], t('welcome.copy_link'))}` +
+      `<p class="w-alt"><a href="https://www.google.com/chrome/" target="_blank" rel="noopener">${t('welcome.get_chrome')}</a></p>`;
+  } else {
+    const path = OS === 'win' ? '%USERPROFILE%\\.claude' : '~/.claude';
+    body = `<h2>${t('welcome.steps_title')}</h2><ol class="w-steps">` +
+      `<li><p>${t('welcome.step_copy')}</p>${copyRow(path)}</li>` +
+      `<li><p>${t('welcome.step_open')}</p><button class="btn primary big" data-pick>${t('connect.pick')}</button></li>` +
+      `<li><p>${t('welcome.step_paste_' + OS)}</p></li>` +
+      `<li><p>${t('welcome.step_allow')}</p></li></ol>` +
+      (welcomeError ? `<p class="w-err" role="alert">${welcomeError}</p>` : '');
+  }
+  return `<div class="welcome">${head}<section class="w-body">${body}</section>${safe}${dev}</div>`;
+}
+
 function renderEmptyView() {
   const box = $('vempty');
+  box.classList.toggle('is-welcome', !SERVER && sourceState !== 'ready');
+  document.body.classList.toggle('needs-setup', !SERVER && sourceState !== 'ready');
+  if (!box.hidden && !SERVER && sourceState !== 'ready') { box.innerHTML = welcomeHtml(); return; }
   if (!box.hidden) {
     box.innerHTML = `<div><h2>${t('sessions.pick_title')}</h2><p>${t('sessions.pick_text')}</p>` + liveQuickList() + '</div>';
   }
   panes.forEach((p) => { if (!p.key) p.renderEmpty(); });
 }
 $('vempty').addEventListener('click', (e) => {
+  const c = e.target.closest('[data-copy-text]');
+  if (c) {
+    copyText(c.dataset.copyText).then((ok) => {
+      toast(ok ? t('welcome.copied') : t('welcome.copy_failed'));
+      if (ok) { c.classList.add('done'); setTimeout(() => c.classList.remove('done'), 1500); }
+    });
+    return;
+  }
+  if (e.target.closest('[data-pick]')) return connectFolder(false);
+  if (e.target.closest('[data-reconnect]')) return connectFolder(true);
   const b = e.target.closest('[data-id]');
   if (b) openIn({ dir: b.dataset.dir, id: b.dataset.id, title: b.querySelector('[dir]').textContent });
 });
@@ -2965,6 +3016,7 @@ function restorePanes(restoring) {
   applyTheme();
   renderLangBtn();
   document.body.classList.toggle('collapsed', !!ui.collapsed);
+  try { IS_BRAVE = !!(navigator.brave && (await navigator.brave.isBrave())); } catch (e) {}
   sourceState = await SRC.init();
   setServerUi(sourceState === 'ready');
   showPage(state.cur);
