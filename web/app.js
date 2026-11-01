@@ -83,6 +83,9 @@ function ago(ms) {
 function hhmm(ts) {
   return ts ? new Date(ts).toLocaleTimeString(LOCALE[LANG], { hour: '2-digit', minute: '2-digit' }) : '';
 }
+// Numbers and dates in the active language's locale (ar-EG draws Arabic-Indic digits).
+const num = (n, opts) => Number(n).toLocaleString(LOCALE[LANG], opts);
+const whenText = (ms) => new Date(ms).toLocaleString(LOCALE[LANG], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const uid = () => Math.random().toString(36).slice(2, 10);
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
@@ -858,6 +861,7 @@ $('langBtn').onclick = () => {
   setLang(ui.lang);
   saveUi();
   applyI18n(document);
+  lbClose(); // its text and the images' captions were built in the old language
   document.querySelectorAll('.dd-native').forEach(syncSelect);
   renderLangBtn();
   applyTheme();
@@ -1149,7 +1153,7 @@ function sessRow(p, s, now, withProject) {
         const al = isLive(a.mtime);
         const aon = shown(p.dir, s.id, a.id);
         const name = a.description || 'subagent';
-        const meta = [a.type, a.model, al ? t('state.live_agent') : ago(a.mtime)].filter(Boolean).join(' · ');
+        const meta = [a.type, a.model, al ? t('state.live_agent') : a.finished ? t('agents.finished_ago', { ago: ago(a.mtime) }) : ago(a.mtime)].filter(Boolean).join(' · ');
         return `<div class="sess agent${aon ? ' on' : ''}" data-dir="${esc(p.dir)}" data-id="${esc(s.id)}" data-agent="${esc(a.id)}" title="${esc(name)}">` +
           `<span class="dot${al ? ' live' : ''}"></span><div class="st"><div class="stt" dir="${textDir(name)}">${esc(name)}</div>` +
           `<div class="sm${al ? ' live' : ''}">${esc(meta)}</div></div><span class="row-acts">${splitBtn}</span></div>`;
@@ -1430,8 +1434,9 @@ function buildSearchRe(q, o) {
   try { return new RegExp(src, 'gu' + (o.case ? '' : 'i')); } catch (e) { return 'bad'; }
 }
 
-function imgsHtml(list) {
-  return list.map((u) => `<a class="shot" href="${esc(u)}" data-img><img src="${esc(u)}" loading="lazy" alt="${esc(t('msg.image_alt'))}"></a>`).join('');
+// from = where the image came from (shown in the viewer's properties), ts = when
+function imgsHtml(list, from, ts) {
+  return list.map((u) => `<a class="shot" href="${esc(u)}" data-img data-from="${esc(from || '')}" data-ts="${esc(ts || '')}"><img src="${esc(u)}" loading="lazy" alt="${esc(t('msg.image_alt'))}"></a>`).join('');
 }
 
 // ---------- one pane = one live session / subagent transcript ----------
@@ -1445,11 +1450,13 @@ class Pane {
     this.el.innerHTML =
       '<header class="phead"><span class="dot plive"></span>' +
       '<div class="vt"><div class="ptitle" dir="auto"></div><div class="pmeta"></div></div>' +
+      `<button class="icon-btn" data-a="info" data-i18n-title="info.tip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>` +
       `<button class="icon-btn" data-a="search" data-i18n-title="pane.search_tip"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>` +
       `<button class="icon-btn" data-a="width" data-i18n-title="pane.width_tip"><svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg></button>` +
       `<button class="icon-btn" data-a="split" data-i18n-title="pane.split_tip">${SPLIT_ICON}</button>` +
       `<button class="icon-btn" data-a="close" data-i18n-title="pane.close_tip">${ICON.x}</button></header>` +
       '<div class="pagents" hidden></div>' +
+      '<div class="pinfo" hidden></div>' +
       '<div class="psearch" hidden><div class="ps-row">' +
       '<label class="field ps-field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="ps-q" data-i18n-placeholder="pane.search_ph" autocomplete="off" spellcheck="false"></label>' +
       '<span class="ps-count"></span>' +
@@ -1481,6 +1488,8 @@ class Pane {
     this.el.addEventListener('pointerdown', () => setActive(this), true);
     this.q('.phead').addEventListener('click', (e) => this.onHead(e));
     this.q('.pagents').addEventListener('click', (e) => this.onAgents(e));
+    this.q('.pinfo').addEventListener('click', (e) => this.onInfoClick(e));
+    if (ui.infoOpen) { this.q('.pinfo').hidden = false; this.q('[data-a="info"]').classList.add('on'); }
     this.q('.pjump').onclick = () => this.toBottom(true);
     this.rail = this.q('.prail');
     this.rail.classList.toggle('wide', !!ui.railWide);
@@ -1687,6 +1696,8 @@ class Pane {
   }
 
   reset() {
+    this.stats = newStats();
+    if (this.el) this.renderInfo();
     this.tools = {};
     this.group = null;
     this.pendingUser = null;
@@ -1757,6 +1768,8 @@ class Pane {
     const ms = a ? a.mtime : s.mtime;
     const live = isLive(ms);
     this.q('.plive').classList.toggle('live', live);
+    this.agentInfo = a || null;
+    this.sessInfo = s;
     const status = s.state === 'asking' && !a ? `<span class="ask-badge">${t('state.asking')}</span>`
       : live ? `<span class="live-badge">${t('pane.live')}</span>` : `<span>${t('pane.updated', { ago: ago(ms) })}</span>`;
     if (a) {
@@ -1767,14 +1780,36 @@ class Pane {
       this.q('.pmeta').innerHTML = `<span>${esc(p.name)}</span><span>·</span>${status}`;
       if (!this.title) { this.title = s.title; this.q('.ptitle').textContent = this.title; }
     }
+    this.renderSummary();
+    this.renderInfo();
     // subagents of this session, live ones first: click to open here, Ctrl+click for a new pane
     const agents = (s.agents || []).slice().sort((x, y) => (isLive(y.mtime) - isLive(x.mtime)) || (y.born - x.born));
     if (!agents.length) { bar.hidden = true; return; }
-    const liveN = agents.filter((x) => isLive(x.mtime)).length;
-    bar.innerHTML = `<span class="pa-label">${tn('agents.label', agents.length)}${liveN ? ` · <b>${t('agents.live', { n: liveN })}</b>` : ''}</span>` +
-      (a ? `<button class="chip pa" data-parent>${ICON.chev}${t('pane.parent')}</button>` : '') +
-      agents.map((x) => `<button class="chip pa${a && a.id === x.id ? ' cur' : ''}" data-agent="${esc(x.id)}" title="${esc([x.description, x.type, x.model].filter(Boolean).join(' · '))}">` +
-        `<span class="dot${isLive(x.mtime) ? ' live' : ''}"></span><span class="pa-t" dir="auto">${esc(x.description || 'subagent')}</span></button>`).join('');
+    // Each subagent is: done (its meta says finished), running (not finished and active in the last 30 min;
+    // "live" when it wrote something in the last 90s, otherwise busy in a long command), or stopped.
+    const stateOf = (x) => (x.finished ? 'done' : isLive(x.mtime) ? 'live' : Date.now() - x.mtime < 30 * 60e3 ? 'busy' : 'stopped');
+    const isRunning = (x) => ['live', 'busy'].includes(stateOf(x));
+    const liveN = agents.filter(isRunning).length;
+    const doneN = agents.filter((x) => stateOf(x) === 'done').length;
+    const stoppedN = agents.length - liveN - doneN;
+    const chip = (x) => {
+      const st = stateOf(x);
+      const icon = st === 'done' ? ICON.check : st === 'busy' ? '<span class="spin"></span>' : `<span class="dot${st === 'live' ? ' live' : ''}"></span>`;
+      const tip = [x.description, x.type, x.model, `${t('agents.st.' + st)}${st === 'live' ? '' : ' · ' + t('agents.last', { ago: ago(x.mtime) })}`].filter(Boolean).join(' · ');
+      return `<button class="chip pa ${st}${a && a.id === x.id ? ' cur' : ''}" data-agent="${esc(x.id)}" title="${esc(tip)}">` +
+        `<span class="pa-st">${icon}</span><span class="pa-t" dir="auto">${esc(x.description || 'subagent')}</span>` +
+        (x.type ? `<span class="pa-type">${esc(x.type)}</span>` : '') + '</button>';
+    };
+    const count = (cls, key, n) => `<span class="pa-count ${cls}" title="${esc(t(key + '_tip', { n: num(n) }))}">${t(key, { n: num(n) })}</span>`;
+    const running = agents.filter(isRunning), rest = agents.filter((x) => !isRunning(x));
+    bar.innerHTML = `<span class="pa-label">${t('agents.title')}` +
+      (liveN ? count('live', 'agents.n_live', liveN) : '') +
+      (doneN ? count('done', 'agents.n_done', doneN) : '') +
+      (stoppedN ? count('done', 'agents.n_stopped', stoppedN) : '') + '</span>' +
+      (a ? `<button class="chip pa parent" data-parent>${ICON.chev}${t('pane.parent')}</button>` : '') +
+      running.map(chip).join('') +
+      (running.length && rest.length ? '<span class="pa-sep"></span>' : '') +
+      rest.map(chip).join('');
     bar.hidden = false;
   }
 
@@ -1787,6 +1822,7 @@ class Pane {
     else if (a === 'bottom') this.toBottom(true);
     else if (a === 'split') { const p = addPane(); setActive(p); afterPaneChange(); }
     else if (a === 'width') openWidthMenu(b);
+    else if (a === 'info') this.toggleInfo();
     else if (a === 'search') { if (this.q('.psearch').hidden) this.searchOpen(); else this.searchClose(); }
   }
 
@@ -1822,6 +1858,48 @@ class Pane {
     save();
     renderThumbs();
     toast(t('pages.added_as', { n: state.pages.length }));
+  }
+
+  // ---------- info panel: model, duration, tokens, folder, activity ----------
+  toggleInfo(force) {
+    const box = this.q('.pinfo');
+    const open = force != null ? force : box.hidden;
+    box.hidden = !open;
+    this.q('[data-a="info"]').classList.toggle('on', open);
+    ui.infoOpen = open;
+    saveUi();
+    if (open) this.renderInfo();
+  }
+  scheduleInfo() {
+    if (this.infoT) return;
+    this.infoT = setTimeout(() => { this.infoT = null; this.renderInfo(); this.renderSummary(); }, 400);
+  }
+  renderSummary() {
+    // compact "model · duration · tokens" next to the title
+    const meta = this.q('.pmeta');
+    let el = meta.querySelector('.psum');
+    const sum = statSummary(this.stats);
+    if (!sum) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('span'); el.className = 'psum'; meta.append(el); }
+    el.textContent = sum;
+  }
+  renderInfo() {
+    const box = this.q('.pinfo');
+    if (!box || box.hidden) return;
+    box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo);
+  }
+  onInfoClick(e) {
+    const c = e.target.closest('[data-copy]');
+    if (c) { copyText(c.dataset.copy).then((ok) => toast(t(ok ? 'info.copied' : 'copy.failed'))); return; }
+    const f = e.target.closest('[data-file]');
+    if (f) {
+      // jump to the last edit of that file and open it
+      const edits = [...this.body.querySelectorAll('details.tool')].filter((d) => d.dataset.file === f.dataset.file);
+      const last = edits[edits.length - 1];
+      if (!last) return;
+      for (let d = last; d; d = d.parentElement.closest('details')) d.open = true;
+      this.jumpTo(last);
+    }
   }
 
   // ---------- search inside this session ----------
@@ -2040,6 +2118,8 @@ class Pane {
     let userAdded = false;
     evs.forEach((ev) => {
       let el = null;
+      trackStats(this.stats, ev);
+      if (ev.k === 'usage' || ev.k === 'ctx') return; // stats only, nothing to draw
       if (ev.k === 'title') {
         if (!this.key.agent) { this.title = ev.text; this.q('.ptitle').textContent = ev.text; persistPanes(); }
         return;
@@ -2060,7 +2140,7 @@ class Pane {
               g._imgs.className = 'imgs tool-imgs';
               g.after(g._imgs);
             }
-            g._imgs.insertAdjacentHTML('beforeend', imgsHtml(ev.images));
+            g._imgs.insertAdjacentHTML('beforeend', imgsHtml(ev.images, `${tl.dataset.name}: ${tl.dataset.sum || ''}`, ''));
           }
           tl.classList.remove('pending');
           tl.classList.add(ev.err ? 'bad' : 'ok');
@@ -2094,6 +2174,7 @@ class Pane {
         t.className = 'tool pending';
         t.dataset.name = ev.name;
         t.dataset.sum = ev.sum;
+        if (ev.diff && ev.diff.file) t.dataset.file = ev.diff.file;
         const d = ev.diff ? diffHtml(ev.diff) : null;
         t.innerHTML = `<summary><span class="st-ico"><span class="spin"></span></span><span class="t-name">${esc(ev.name)}</span>` +
           `<span class="t-sum" dir="auto">${esc(ev.sum)}</span>${d ? d.stat : ''}</summary>` +
@@ -2112,7 +2193,7 @@ class Pane {
         if (this.pendingUser && ev.text.startsWith(this.pendingUser._raw.trim())) this.pendingUser.remove();
         el = document.createElement('div');
         el.className = 'msg user';
-        el.innerHTML = `<div class="who">${t(this.key.agent ? 'msg.agent_task' : ev.queued ? 'msg.you_queued' : 'msg.you')} · ${hhmm(ev.ts)}</div>${md(ev.text)}${ev.images ? `<div class="imgs">${imgsHtml(ev.images)}</div>` : ''}`;
+        el.innerHTML = `<div class="who">${t(this.key.agent ? 'msg.agent_task' : ev.queued ? 'msg.you_queued' : 'msg.you')} · ${hhmm(ev.ts)}</div>${md(ev.text)}${ev.images ? `<div class="imgs">${imgsHtml(ev.images, t(this.key.agent ? 'lightbox.from_task' : 'lightbox.from_you'), ev.ts)}</div>` : ''}`;
         el._raw = ev.text;
         el._time = hhmm(ev.ts);
         this.pendingUser = el;
@@ -2141,6 +2222,7 @@ class Pane {
     });
     this.body.append(frag);
     touched.forEach((g) => g && updateGroup(g));
+    this.scheduleInfo();
     if (userAdded) this.renderRail();
     if (!this.q('.psearch').hidden && this.q('.ps-q').value) {
       clearTimeout(this.reSearch);
@@ -2157,6 +2239,101 @@ class Pane {
 }
 
 // ---------- AskUserQuestion ----------
+// ---------- session stats (model, tokens, duration, activity) for the info panel ----------
+function newStats() {
+  return { msgs: new Map(), first: 0, last: 0, cwd: '', branches: [], tools: new Map(), files: new Map(), prompts: 0, errors: 0, compactions: 0, results: 0 };
+}
+function trackStats(st, ev) {
+  if (ev.ts) {
+    const ms = Date.parse(ev.ts);
+    if (ms) { if (!st.first || ms < st.first) st.first = ms; if (ms > st.last) st.last = ms; }
+  }
+  if (ev.k === 'usage') st.msgs.set(ev.mid, { model: ev.model, u: ev.u }); // one message repeats on several lines
+  else if (ev.k === 'ctx') {
+    st.cwd = ev.cwd;
+    if (ev.branch && st.branches[st.branches.length - 1] !== ev.branch) st.branches = [...st.branches.filter((b) => b !== ev.branch), ev.branch];
+  } else if (ev.k === 'tool') {
+    st.tools.set(ev.name, (st.tools.get(ev.name) || 0) + 1);
+    if (ev.diff && ev.diff.file) st.files.set(ev.diff.file, (st.files.get(ev.diff.file) || 0) + 1);
+  } else if (ev.k === 'user') st.prompts++;
+  else if (ev.k === 'result') { st.results++; if (ev.err) st.errors++; }
+  else if (ev.k === 'divider') st.compactions++;
+}
+function tokenTotals(st) {
+  const tk = { i: 0, o: 0, cr: 0, cw: 0 };
+  st.msgs.forEach(({ u }) => { tk.i += u.i; tk.o += u.o; tk.cr += u.cr; tk.cw += u.cw; });
+  tk.all = tk.i + tk.o + tk.cr + tk.cw;
+  return tk;
+}
+function modelCounts(st) {
+  const m = new Map();
+  st.msgs.forEach(({ model }) => { if (model && model !== '<synthetic>') m.set(model, (m.get(model) || 0) + 1); });
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+function fmtTok(n) {
+  const f = (v, big) => num(v, { maximumFractionDigits: big ? 0 : 1, useGrouping: false });
+  if (n >= 1e6) return t('tok.m', { n: f(n / 1e6, n >= 1e7) });
+  if (n >= 1e3) return t('tok.k', { n: f(n / 1e3, n >= 1e4) });
+  return num(n);
+}
+function fmtDur(ms) {
+  const m = Math.round(ms / 60e3);
+  if (ms < 60e3) return t('dur.s', { n: num(Math.max(1, Math.round(ms / 1e3))) });
+  if (m < 60) return t('dur.m', { n: num(m) });
+  return m % 60 ? t('dur.hm', { h: num(Math.floor(m / 60)), m: num(m % 60) }) : t('dur.h', { n: num(m / 60) });
+}
+const shortModel = (m) => m.replace(/^claude-/, '');
+function statSummary(st) {
+  const models = modelCounts(st), tk = tokenTotals(st);
+  const parts = [];
+  if (models.length) parts.push(shortModel(models[0][0]));
+  if (st.first && st.last > st.first) parts.push(fmtDur(st.last - st.first));
+  if (tk.all) parts.push(t('info.tokens_n', { n: fmtTok(tk.all) }));
+  return parts.join(' · ');
+}
+function infoHtml(st, agent, sess) {
+  const tk = tokenTotals(st), models = modelCounts(st);
+  const row = (k, v) => `<div class="ii"><div class="ik">${k}</div><div class="iv">${v}</div></div>`;
+  const chip = (txt, tip) => `<span class="ichip"${tip ? ` title="${esc(t(tip))}"` : ''}>${txt}</span>`;
+  const path = (p) => `<span class="ipath" dir="ltr" title="${esc(p)}">${esc(p)}</span><button class="icopy" data-copy="${esc(p)}" title="${esc(t('info.copy'))}">${ICON.copy}</button>`;
+  let h = '<div class="info-grid">';
+  h += row(t('info.model'), models.length
+    ? models.map(([m, n]) => `<span class="ichip mono">${esc(m)}</span><small>${tn('info.replies', n, { n: num(n) })}</small>`).join(' ')
+    : agent && agent.model ? `<span class="ichip mono">${esc(agent.model)}</span>` : '—');
+  h += row(t('info.duration'), st.first
+    ? `<b>${fmtDur(Math.max(0, st.last - st.first))}</b> <small>${t('info.from_to', { from: whenText(st.first), to: whenText(st.last) })}</small>` : '—');
+  h += row(t('info.tokens'), tk.all
+    ? `<b>${fmtTok(tk.all)}</b> ${chip(t('info.tok_in', { n: fmtTok(tk.i) }), 'info.tok_in_tip')}${chip(t('info.tok_out', { n: fmtTok(tk.o) }), 'info.tok_out_tip')}` +
+      `${chip(t('info.tok_cr', { n: fmtTok(tk.cr) }), 'info.tok_cr_tip')}${chip(t('info.tok_cw', { n: fmtTok(tk.cw) }), 'info.tok_cw_tip')} <small>${tn('info.requests', st.msgs.size, { n: num(st.msgs.size) })}</small>`
+    : '—');
+  const dir = (agent && agent.worktree) || st.cwd;
+  h += row(t('info.folder'), dir ? path(dir) : '—');
+  if (st.branches.length || (agent && agent.worktreeBranch)) {
+    const brs = st.branches.length ? st.branches : [agent.worktreeBranch];
+    h += row(t('info.branch'), brs.map((b) => `<span class="ichip mono">${esc(b)}</span>`).join(' '));
+  }
+  if (agent) {
+    const flags = [agent.type && `<span class="ichip mono">${esc(agent.type)}</span>`, agent.background && chip(t('info.background')),
+      agent.worktree && chip(t('info.worktree')), agent.finished ? `<span class="ichip ok">${t('info.finished')}</span>` : `<span class="ichip live">${t('info.running')}</span>`].filter(Boolean);
+    h += row(t('info.subagent'), flags.join(' '));
+  } else if (sess && sess.agents && sess.agents.length) {
+    h += row(t('info.subagents'), `${num(sess.agents.length)} <small>${t('info.subs_running', { n: num(sess.agents.filter((x) => !x.finished).length) })}</small>`);
+  }
+  const tools = [...st.tools.entries()].sort((a, b) => b[1] - a[1]);
+  const totalTools = tools.reduce((n, [, c]) => n + c, 0);
+  h += row(t('info.activity'), chip(tn(agent ? 'info.prompts' : 'info.prompts_you', st.prompts, { n: num(st.prompts) })) + chip(tn('info.cmds', totalTools, { n: num(totalTools) })) +
+    (st.errors ? `<span class="ichip bad">${t('info.failed', { n: num(st.errors) })}</span>` : '') + (st.compactions ? chip(t('info.compacted', { n: num(st.compactions) })) : '') +
+    (tools.length ? `<div class="itools">${tools.slice(0, 10).map(([n, c]) => `<span class="ichip mono">${esc(n)} <b>${num(c)}</b></span>`).join('')}</div>` : ''));
+  if (st.files.size) {
+    const files = [...st.files.entries()].sort((a, b) => b[1] - a[1]);
+    h += row(`${t('info.files')} <small>(${num(files.length)})</small>`, '<div class="ifiles">' + files.slice(0, 40).map(([f, c]) => {
+      const parts = f.split('/'), name = parts.pop();
+      return `<button class="ifile" data-file="${esc(f)}" title="${esc(f)}"><span class="mono">${esc(name)}</span><small dir="ltr">${esc(parts.slice(-2).join('/'))}</small>${c > 1 ? `<b>×${num(c)}</b>` : ''}</button>`;
+    }).join('') + (files.length > 40 ? `<small>${t('info.more_files', { n: num(files.length - 40) })}</small>` : '') + '</div>');
+  }
+  return h + '</div>';
+}
+
 function askHtml(questions) {
   return `<div class="ask-head"><span class="ask-ico">?</span><span class="ask-title">${t('ask.title')}</span><span class="ask-state">${t('ask.waiting')}</span></div>` +
     questions.map((q, qi) => `<div class="ask-q" data-q="${qi}">` +
@@ -2266,27 +2443,194 @@ function persistPanes() {
   saveUi();
 }
 
-// ---------- lightbox ----------
-let lbIndex = -1, lbScope = null;
-function lbShots() { return lbScope ? [...lbScope.querySelectorAll('[data-img]')] : []; }
+// ---------- image viewer: zoom (wheel, buttons, keys), pan (drag), properties, thumbnail strip ----------
+const lb = { i: -1, scope: null, s: 1, x: 0, y: 0, fit: 1, w: 0, h: 0, blob: null };
+function lbShots() { return lb.scope ? [...lb.scope.querySelectorAll('[data-img]')] : []; }
+function lbApply(animate) {
+  const img = $('lbImg');
+  img.classList.toggle('animating', !!animate);
+  img.style.transform = `translate(${lb.x}px, ${lb.y}px) scale(${lb.s})`;
+  img.classList.toggle('pixel', lb.s >= 2); // crisp pixels instead of blur when blown up
+  $('lbZoom').textContent = num(Math.round(lb.s * 100)) + '%';
+  const zv = $('lbZoomVal'); // the properties panel shows the live zoom too
+  if (zv) zv.textContent = $('lbZoom').textContent;
+}
+// fit the whole image in the stage; small images are enlarged too (up to 8x) so they are actually visible
+function lbFit(animate) {
+  const st = $('lbStage').getBoundingClientRect();
+  if (!lb.w) return;
+  lb.fit = Math.min((st.width - 48) / lb.w, (st.height - 48) / lb.h, 8);
+  lb.s = lb.fit;
+  lb.x = (st.width - lb.w * lb.s) / 2;
+  lb.y = (st.height - lb.h * lb.s) / 2;
+  lbApply(animate);
+}
+// zoom to `s`, keeping the point under (cx, cy) (stage coordinates) in place
+function lbZoomTo(z, cx, cy, animate) {
+  const st = $('lbStage').getBoundingClientRect();
+  if (cx == null) { cx = st.width / 2; cy = st.height / 2; }
+  z = Math.min(64, Math.max(0.05, z));
+  lb.x = cx - ((cx - lb.x) * z) / lb.s;
+  lb.y = cy - ((cy - lb.y) * z) / lb.s;
+  lb.s = z;
+  lbApply(animate);
+}
+async function lbShowInfo() {
+  const box = $('lbInfo');
+  if (box.hidden) return;
+  const a = lbShots()[lb.i];
+  if (!a) return;
+  const url = a.getAttribute('href');
+  const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+  let size = '…', type = '…';
+  box.innerHTML = `<h4>${t('lightbox.props')}</h4><dl id="lbDl"></dl>`;
+  const render = () => {
+    const ts = a.dataset.ts && Date.parse(a.dataset.ts) ? whenText(Date.parse(a.dataset.ts)) : '';
+    const gcd = (x, y) => { while (y) [x, y] = [y, x % y]; return x; };
+    const d = lb.w && lb.h ? gcd(lb.w, lb.h) : 1;
+    $('lbDl').innerHTML =
+      row(t('lightbox.dim'), `<span class="mono" dir="ltr">${num(lb.w)} × ${num(lb.h)} px</span>`) + // dir="ltr": digits, units and symbols keep their order in Arabic
+      row(t('lightbox.ratio'), lb.w ? `<span class="mono" dir="ltr">${num(lb.w / d)}:${num(lb.h / d)}</span>` : '—') +
+      row(t('lightbox.size'), `<span class="mono" dir="ltr">${size}</span>`) +
+      row(t('lightbox.type'), `<span class="mono" dir="ltr">${esc(type)}</span>`) +
+      row(t('lightbox.zoom'), `<span class="mono" dir="ltr" id="lbZoomVal">${num(Math.round(lb.s * 100))}%</span>`) +
+      (a.dataset.from ? row(t('lightbox.from'), esc(a.dataset.from)) : '') +
+      (ts ? row(t('lightbox.time'), ts) : '') +
+      row(t('lightbox.url'), `<span class="mono" dir="ltr">${esc(url.length > 60 ? url.slice(0, 60) + '…' : url)}</span>`);
+  };
+  render();
+  try {
+    const blob = await (await fetch(url)).blob();
+    const dec = { maximumFractionDigits: blob.size >= 1048576 ? 2 : 1, minimumFractionDigits: blob.size >= 1048576 ? 2 : 1 };
+    size = blob.size >= 1048576 ? `${num(blob.size / 1048576, dec)} MB` : `${num(blob.size / 1024, dec)} KB`;
+    type = blob.type || '—';
+    lb.blob = blob;
+  } catch (e) { size = '—'; type = '—'; }
+  if (lbShots()[lb.i] === a) render();
+}
 function lbShow(scope, i) {
-  if (scope) lbScope = scope;
+  if (scope) lb.scope = scope;
   const shots = lbShots();
   if (!shots.length) return;
-  lbIndex = (i + shots.length) % shots.length;
-  const url = shots[lbIndex].getAttribute('href');
-  $('lightbox').querySelector('img').src = url;
+  lb.i = (i + shots.length) % shots.length;
+  const a = shots[lb.i];
+  const url = a.getAttribute('href');
+  const box = $('lightbox');
+  box.hidden = false;
+  box.classList.toggle('single', shots.length < 2);
+  $('lbCount').textContent = `${num(lb.i + 1)} / ${num(shots.length)}`;
+  $('lbTitle').textContent = a.dataset.from || '';
   $('lbOpen').href = url;
-  $('lbCount').textContent = `${lbIndex + 1} / ${shots.length}`;
-  $('lightbox').hidden = false;
+  $('lbDownload').href = url;
+  $('lbDownload').setAttribute('download', `marsad-image-${lb.i + 1}`);
+  lb.blob = null;
+  $('lbInfo').hidden = !ui.lbInfo; // keep the properties panel as you left it
+  box.classList.toggle('info', !!ui.lbInfo);
+  box.querySelector('[data-lb="info"]').classList.toggle('on', !!ui.lbInfo);
+  const img = $('lbImg');
+  img.onload = () => { lb.w = img.naturalWidth; lb.h = img.naturalHeight; lbFit(false); lbShowInfo(); };
+  img.src = url;
+  if (img.complete && img.naturalWidth) img.onload();
+  $('lbStrip').innerHTML = shots.length > 1 ? shots.map((sh, k) => `<button data-k="${k}" class="${k === lb.i ? 'on' : ''}"><img src="${esc(sh.getAttribute('href'))}" alt=""></button>`).join('') : '';
+  const on = $('lbStrip').querySelector('.on');
+  if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
-function lbClose() { $('lightbox').hidden = true; lbIndex = -1; }
-$('lightbox').addEventListener('click', (e) => { if (!e.target.closest('a')) lbClose(); });
+function lbClose() { $('lightbox').hidden = true; lb.i = -1; }
+async function lbCopy() {
+  try {
+    let blob = lb.blob || await (await fetch($('lbImg').src)).blob();
+    if (blob.type !== 'image/png') {
+      // the clipboard only takes PNG reliably: redraw through a canvas
+      const c = document.createElement('canvas');
+      c.width = lb.w; c.height = lb.h;
+      c.getContext('2d').drawImage($('lbImg'), 0, 0);
+      blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    }
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    toast(t('lightbox.copied'));
+  } catch (e) { toast(t('lightbox.copy_failed')); }
+}
+$('lightbox').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lb]');
+  if (b) {
+    const a = b.dataset.lb;
+    if (a === 'close') lbClose();
+    else if (a === 'in') lbZoomTo(lb.s * 1.5, null, null, true);
+    else if (a === 'out') lbZoomTo(lb.s / 1.5, null, null, true);
+    else if (a === 'fit') lbFit(true);
+    else if (a === 'actual') lbZoomTo(1, null, null, true);
+    else if (a === 'next') lbShow(null, lb.i + 1);
+    else if (a === 'prev') lbShow(null, lb.i - 1);
+    else if (a === 'copy') lbCopy();
+    else if (a === 'info') {
+      const box = $('lbInfo');
+      box.hidden = !box.hidden;
+      b.classList.toggle('on', !box.hidden);
+      $('lightbox').classList.toggle('info', !box.hidden);
+      ui.lbInfo = !box.hidden;
+      saveUi();
+      lbShowInfo();
+      requestAnimationFrame(() => lbFit(false));
+    }
+    return;
+  }
+  const th = e.target.closest('.lb-strip [data-k]');
+  if (th) { lbShow(null, +th.dataset.k); return; }
+  // a plain click on the dark backdrop (not the image, not a drag, not the panels) closes
+  const st = $('lbStage');
+  if (e.target === st && st._down === st && !st._moved) lbClose();
+});
+// wheel = zoom around the cursor; trackpad pinch arrives as ctrl+wheel and works the same
+$('lbStage').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = $('lbStage').getBoundingClientRect();
+  lbZoomTo(lb.s * Math.pow(1.0018, -e.deltaY * (e.ctrlKey ? 4 : 1)), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+// drag = pan
+$('lbStage').addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  const st = $('lbStage');
+  st.setPointerCapture(e.pointerId);
+  st.classList.add('dragging');
+  st._down = e.target; // the capture redirects the click to the stage, so remember what was really pressed
+  st._moved = false;
+  const start = { x: e.clientX, y: e.clientY, ox: lb.x, oy: lb.y };
+  const move = (ev) => {
+    if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 3) st._moved = true;
+    lb.x = start.ox + ev.clientX - start.x;
+    lb.y = start.oy + ev.clientY - start.y;
+    lbApply(false);
+  };
+  const up = () => {
+    st.removeEventListener('pointermove', move);
+    st.classList.remove('dragging');
+  };
+  st.addEventListener('pointermove', move);
+  st.addEventListener('pointerup', up, { once: true });
+  st.addEventListener('pointercancel', up, { once: true });
+});
+// double click: fit <-> 2x (or 1:1 if that's bigger) at the cursor
+$('lbStage').addEventListener('dblclick', (e) => {
+  const r = $('lbStage').getBoundingClientRect();
+  const target = Math.abs(lb.s - lb.fit) < 0.01 ? Math.max(1, lb.fit * 2) : null;
+  if (target) lbZoomTo(target, e.clientX - r.left, e.clientY - r.top, true);
+  else lbFit(true);
+});
+window.addEventListener('resize', () => { if (!$('lightbox').hidden) lbFit(false); });
 document.addEventListener('keydown', (e) => {
   if ($('lightbox').hidden) return;
-  if (e.key === 'Escape') { e.preventDefault(); lbClose(); }
-  else if (e.key === (isRtl() ? 'ArrowLeft' : 'ArrowRight')) { e.preventDefault(); lbShow(null, lbIndex + 1); } // next points the way text runs
-  else if (e.key === (isRtl() ? 'ArrowRight' : 'ArrowLeft')) { e.preventDefault(); lbShow(null, lbIndex - 1); }
+  if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser zoom and friends alone
+  const k = e.key;
+  const handled = () => { e.preventDefault(); e.stopPropagation(); };
+  const next = isRtl() ? 'ArrowLeft' : 'ArrowRight', prev = isRtl() ? 'ArrowRight' : 'ArrowLeft'; // next points the way text runs
+  if (k === 'Escape') { handled(); lbClose(); }
+  else if (k === next) { handled(); lbShow(null, lb.i + 1); }
+  else if (k === prev) { handled(); lbShow(null, lb.i - 1); }
+  else if (k === '+' || k === '=') { handled(); lbZoomTo(lb.s * 1.5, null, null, true); }
+  else if (k === '-' || k === '_') { handled(); lbZoomTo(lb.s / 1.5, null, null, true); }
+  else if (k === '0') { handled(); lbFit(true); }
+  else if (k === '1') { handled(); lbZoomTo(1, null, null, true); }
+  else if (k.toLowerCase() === 'i') { handled(); $('lightbox').querySelector('[data-lb="info"]').click(); }
 }, true);
 
 // keep polling in a background tab when notifications are on, so they can fire
@@ -2391,6 +2735,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && ui.tab === 'sessions' && $('lightbox').hidden) {
     const open = panes.find((x) => x === activePane && !x.q('.psearch').hidden) || panes.find((x) => !x.q('.psearch').hidden);
     if (open) { e.preventDefault(); open.searchClose(); return; }
+  }
+  if (ui.tab === 'sessions' && activePane && activePane.key && k === 'i' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.target.closest('input,textarea,select,[contenteditable]')) {
+    e.preventDefault();
+    activePane.toggleInfo();
+    return;
   }
   if (ui.tab === 'sessions' && activePane && activePane.key && ((e.ctrlKey && k === 'f') || e.key === 'F3')) {
     e.preventDefault();

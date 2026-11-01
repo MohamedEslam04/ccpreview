@@ -100,7 +100,32 @@
 </div>
 <div id="toast" hidden></div>
 <div class="menu" id="widthMenu" hidden></div>
-<div id="lightbox" hidden><img alt=""><div class="lb-bar"><span id="lbCount"></span><a id="lbOpen" target="_blank" rel="noopener" data-i18n="lightbox.open"></a><span data-i18n="lightbox.hint"></span></div></div>
+<div id="lightbox" hidden>
+  <div class="lb-top">
+    <span id="lbCount" class="lb-count"></span>
+    <span id="lbTitle" class="lb-title"></span>
+    <div class="lb-tools">
+      <button class="lb-btn" data-lb="out" data-i18n-title="lightbox.out"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <button class="lb-btn lb-zoom" data-lb="fit" id="lbZoom" data-i18n-title="lightbox.fit">100%</button>
+      <button class="lb-btn" data-lb="in" data-i18n-title="lightbox.in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="lb-btn" data-lb="actual" data-i18n-title="lightbox.actual">1:1</button>
+      <span class="lb-sep"></span>
+      <button class="lb-btn" data-lb="info" data-i18n-title="lightbox.info"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+      <button class="lb-btn" data-lb="copy" data-i18n-title="lightbox.copy"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
+      <a class="lb-btn" id="lbDownload" download data-i18n-title="lightbox.download"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></a>
+      <a class="lb-btn" id="lbOpen" target="_blank" rel="noopener" data-i18n-title="lightbox.open"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>
+      <button class="lb-btn" data-lb="close" data-i18n-title="lightbox.close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+  </div>
+  <div class="lb-main">
+    <div class="lb-stage" id="lbStage"><img id="lbImg" alt="" draggable="false"></div>
+    <aside class="lb-info" id="lbInfo" hidden></aside>
+  </div>
+  <button class="lb-nav lb-prev" data-lb="prev" data-i18n-title="lightbox.prev"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+  <button class="lb-nav lb-next" data-lb="next" data-i18n-title="lightbox.next"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+  <div class="lb-strip" id="lbStrip"></div>
+  <div class="lb-hint" data-i18n="lightbox.hint"></div>
+</div>
 <input type="file" id="importFile" accept=".json,application/json" hidden>
 
 <script src="core.js"></script>
