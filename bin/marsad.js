@@ -4,13 +4,13 @@
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
-const { createServer } = require('../lib/server.js');
 const pkg = require('../package.json');
 
 const HELP = `marsad ${pkg.version}
 Watch your Claude Code sessions live in the browser. Everything stays on this machine.
 
 Usage: marsad [options]
+       marsad hook <install|uninstall|status>
 
   -p, --port <n>       port to listen on (default 4747; 0 picks a free one)
       --projects <dir> Claude Code projects folder (default ~/.claude/projects)
@@ -18,6 +18,12 @@ Usage: marsad [options]
       --no-open        don't open the browser
   -v, --version        print the version
   -h, --help           show this help
+
+Optional: see a question while it waits (Claude Code only writes it to the transcript after you answer):
+
+  marsad hook install    add Marsad's own entries to ~/.claude/settings.json (backup kept next to it)
+  marsad hook uninstall  remove only those entries
+  marsad hook status     show whether the hook is installed and where
 
 Marsad only listens on 127.0.0.1.`;
 
@@ -48,6 +54,32 @@ function fail(msg) {
   process.exit(2);
 }
 
+function hookCommand(args) {
+  const hook = require('../lib/hook-install.js');
+  const sub = args[0];
+  if (!['install', 'uninstall', 'status'].includes(sub) || args.length > 1) fail('usage: marsad hook <install|uninstall|status>');
+  try {
+    if (sub === 'install') {
+      const r = hook.install();
+      console.log(r.changed ? `Installed. Added ${r.added.join(', ')} to ${r.settings}` : `Already installed in ${r.settings}`);
+      if (r.backup) console.log(`Backup of your settings: ${r.backup}`);
+      console.log(`Hook script: ${r.script}`);
+      console.log('Restart Claude Code sessions (or open /hooks once) so they pick it up.');
+    } else if (sub === 'uninstall') {
+      const r = hook.uninstall();
+      console.log(r.changed ? `Removed Marsad's entries (${r.removed.join(', ') || 'none in settings'}) and the hook script.` : 'Nothing to remove: the hook is not installed.');
+    } else {
+      const r = hook.status();
+      if (r.state === 'not-installed') console.log('Pending-question hook: not installed (run: marsad hook install)');
+      else console.log(`Pending-question hook: ${r.state === 'installed' ? 'installed' : `partly installed, missing ${r.missing.join(', ')} (run: marsad hook install)`}\nSettings: ${r.settings}\nScript:   ${r.script}${r.scriptExists ? '' : ' (missing, run: marsad hook install)'}`);
+    }
+  } catch (e) {
+    if (!(e instanceof hook.HookError)) throw e;
+    console.error(`marsad: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 function openBrowser(url) {
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
@@ -58,6 +90,8 @@ function openBrowser(url) {
   } catch (e) { /* no browser launcher: the URL is printed anyway */ }
 }
 
+if (process.argv[2] === 'hook') { hookCommand(process.argv.slice(3)); process.exit(0); }
+const { createServer } = require('../lib/server.js');
 const opts = parse(process.argv.slice(2));
 // systemd socket activation (see docs/systemd) hands us the listening socket as fd 3
 const activated = process.env.LISTEN_FDS === '1' && Number(process.env.LISTEN_PID) === process.pid;
