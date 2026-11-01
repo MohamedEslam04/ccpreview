@@ -632,6 +632,10 @@
   .side-foot .icon-btn { width: 28px; height: 28px; }
   #langBtn { font-size: 12px; font-weight: 700; }
   .side-foot .chip { padding: 0 8px; gap: 5px; }
+  /* a narrow sidebar: the status chip gives up its label first, then the buttons wrap to a second row */
+  .side-foot { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+  .side-foot .chip { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .side-foot .chip .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .vempty { display: grid; place-content: center; text-align: center; gap: 10px; color: var(--muted); padding: 40px; }
   .vempty h2 { margin: 0; font-size: 18px; color: var(--fg); }
   .vempty p { margin: 0; font-size: 14px; }
