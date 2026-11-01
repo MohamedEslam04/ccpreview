@@ -2541,6 +2541,43 @@ function lbShow(scope, i) {
 $('lbStrip').addEventListener('wheel', (e) => {
   if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); $('lbStrip').scrollLeft += isRtl() ? -e.deltaY : e.deltaY; }
 }, { passive: false });
+// hover a thumbnail: quick look above the strip (which image it is, where it came from)
+(function () {
+  const strip = $('lbStrip');
+  const peek = document.createElement('div');
+  peek.className = 'lb-peek';
+  peek.hidden = true;
+  peek.innerHTML = '<img alt=""><div class="lb-peek-cap"><b></b><span></span></div>';
+  $('lightbox').append(peek);
+  let showT = null, cur = null;
+  const hide = () => { clearTimeout(showT); showT = null; cur = null; peek.hidden = true; };
+  const show = (btn) => {
+    const k = +btn.dataset.k, a = lbShots()[k];
+    if (!a) return;
+    peek.querySelector('img').src = a.getAttribute('href');
+    peek.querySelector('b').textContent = `${k + 1} / ${lbShots().length}`;
+    peek.querySelector('span').textContent = a.dataset.from || '';
+    peek.classList.toggle('is-current', k === lb.i);
+    peek.hidden = false;
+    // centered above the thumbnail, kept inside the window
+    const r = btn.getBoundingClientRect(), w = peek.offsetWidth, h = peek.offsetHeight;
+    peek.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+    peek.style.top = Math.max(8, r.top - h - 10) + 'px';
+  };
+  strip.addEventListener('mouseover', (e) => {
+    const btn = e.target.closest('[data-k]');
+    if (!btn || btn === cur) return;
+    cur = btn;
+    clearTimeout(showT);
+    // first hover waits a beat (no flicker while crossing the strip); moving along it updates instantly
+    if (peek.hidden) showT = setTimeout(() => show(btn), 140); else show(btn);
+  });
+  strip.addEventListener('mouseleave', hide);
+  strip.addEventListener('click', hide);
+  strip.addEventListener('scroll', hide, { passive: true });
+  $('lightbox').addEventListener('pointerdown', (e) => { if (!e.target.closest('.lb-strip')) hide(); });
+})();
+
 function lbClose() { $('lightbox').hidden = true; lb.i = -1; }
 async function lbCopy() {
   try {

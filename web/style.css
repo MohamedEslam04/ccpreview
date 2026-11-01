@@ -348,6 +348,14 @@
   .lb-strip::-webkit-scrollbar-thumb { background: oklch(1 0 0 / .2); border-width: 1px; }
   .lb-strip button { flex: none; width: 54px; height: 40px; padding: 0; border: 2px solid transparent; border-radius: 6px; background: oklch(1 0 0 / .06); cursor: pointer; overflow: hidden; opacity: .55; transition: opacity .15s, transform .15s var(--ease), border-color .15s; }
   .lb-strip button.on { border-color: var(--accent); opacity: 1; transform: translateY(-2px); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 35%, transparent); }
+  .lb-peek { position: fixed; z-index: 45; width: 340px; padding: 6px; border-radius: 12px; background: oklch(0.22 0.008 60); border: 1px solid oklch(1 0 0 / .14);
+    box-shadow: 0 12px 40px oklch(0 0 0 / .55); pointer-events: none; animation: peekIn .12s var(--ease); }
+  @keyframes peekIn { from { opacity: 0; transform: translateY(6px); } }
+  .lb-peek img { display: block; width: 100%; max-height: 230px; object-fit: contain; border-radius: 7px; background: oklch(1 0 0 / .05); }
+  .lb-peek-cap { display: flex; gap: 8px; align-items: baseline; padding: 6px 4px 2px; font-size: 12px; color: oklch(0.93 0.005 70); }
+  .lb-peek-cap b, .lb-count { flex: none; font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; } /* "7 / 55", not "55 / 7" in RTL */
+  .lb-peek-cap span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .7; }
+  .lb-peek.is-current { border-color: var(--accent); }
   .lb-strip button:hover { opacity: 1; }
   .lb-strip img { width: 100%; height: 100%; object-fit: contain; }
   .lb-hint { flex: none; text-align: center; font-size: 11px; opacity: .5; padding: 2px 14px 8px; }
