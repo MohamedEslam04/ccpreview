@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Marsad">
+  <!-- observatory: a dome with its telescope pointed at a star -->
+  <rect width="64" height="64" rx="14" fill="#241e1a"/>
+  <circle cx="17" cy="16" r="2.6" fill="#f3e3d3"/>
+  <path d="M41.5 33 L49 20" stroke="#f3e3d3" stroke-width="6" stroke-linecap="round"/>
+  <path d="M12 47 A20 20 0 0 1 52 47 Z" fill="#c4673a"/>
+  <rect x="9" y="47" width="46" height="7" rx="2.5" fill="#e3936a"/>
+</svg>

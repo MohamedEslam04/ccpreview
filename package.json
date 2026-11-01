@@ -14,6 +14,6 @@
   "scripts": {
     "start": "node bin/marsad.js",
     "dev": "node bin/marsad.js --no-open",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.js"
   }
 }

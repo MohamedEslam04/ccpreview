@@ -1,0 +1,8 @@
+[Unit]
+Description=Marsad socket (Claude Code session viewer)
+
+[Socket]
+ListenStream=127.0.0.1:4747
+
+[Install]
+WantedBy=sockets.target
