@@ -126,11 +126,14 @@
     async pick() {
       let h = await window.showDirectoryPicker({ id: 'ccpreview-projects', mode: 'read' });
       // picked ~/.claude (or anything holding a "projects" folder): step into it
-      if (!(await hasJsonlChild(h))) {
+      // picked ~/.claude (or anything holding "projects"), or the home folder holding .claude: step into it
+      for (const sub of [['projects'], ['.claude', 'projects']]) {
+        if (await hasJsonlChild(h)) break;
         try {
-          const p = await h.getDirectoryHandle('projects');
+          let p = h;
+          for (const name of sub) p = await p.getDirectoryHandle(name);
           if (await hasJsonlChild(p)) h = p;
-        } catch (e) { /* no projects/ inside */ }
+        } catch (e) { /* not there */ }
       }
       if (!(await hasJsonlChild(h))) throw new Error('not-projects');
       await saveHandle(h);

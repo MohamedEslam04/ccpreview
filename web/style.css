@@ -744,6 +744,10 @@ details.thinking .th-body { padding: 4px 12px; border-inline-start: 2px solid va
   background: color-mix(in oklch, var(--err) 9%, transparent); color: var(--fg); }
 .w-safe { display: flex; align-items: center; gap: 8px; margin: 32px 0 0; padding-top: 18px; border-top: 1px solid var(--line-soft, var(--line)); color: var(--muted); font-size: 13.5px; }
 .w-safe svg { flex: none; width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+.w-help { margin-top: 20px; color: var(--muted); font-size: 14px; }
+.w-help summary { cursor: pointer; width: fit-content; color: var(--accent); }
+.w-help ul { margin: 8px 0 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 6px; }
+.w-help code { font-family: var(--mono); font-size: 12.5px; }
 .w-dev { margin-top: 14px; color: var(--muted); font-size: 13.5px; }
 .w-dev summary { cursor: pointer; width: fit-content; }
 .w-dev summary:hover { color: var(--fg); }

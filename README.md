@@ -83,9 +83,14 @@ Open <https://mohamedeslam04.github.io/ccpreview/> and pick your `~/.claude/proj
 - macOS: press `Cmd+Shift+.`.
 - Windows: paste `%USERPROFILE%\.claude\projects` into the picker's address bar.
 
-If you pick `~/.claude` instead of `~/.claude/projects`, ccpreview steps into `projects` for you.
+If you pick `~/.claude` (or your home folder) instead of `~/.claude/projects`, ccpreview steps into `projects` for you. The page walks through each step for your system and browser.
 
 Firefox and Safari do not support folder access. Use `npx ccpreview` there.
+
+Special setups:
+
+- **WSL**: if Claude Code runs inside WSL, your sessions live in Linux. Either run `npx ccpreview` inside WSL and open the link it prints in your Windows browser, or in the hosted page pick `\\wsl.localhost\<distro>\home\<you>\.claude`.
+- **`CLAUDE_CONFIG_DIR`**: if you moved Claude Code's files with it, `npx ccpreview` and `ccpreview hook install` follow it automatically. In the hosted page, pick that folder.
 
 ## Privacy and security
 
@@ -105,7 +110,7 @@ Firefox and Safari do not support folder access. Use `npx ccpreview` there.
 ccpreview [options]
 
   -p, --port <n>       port to listen on (default 4747; 0 picks a free one)
-      --projects <dir> Claude Code projects folder (default ~/.claude/projects)
+      --projects <dir> Claude Code projects folder (default ~/.claude/projects, or $CLAUDE_CONFIG_DIR/projects)
       --data <dir>     where ccpreview keeps your notes pages (default ~/.ccpreview)
       --no-open        don't open the browser
   -v, --version        print the version
@@ -161,6 +166,8 @@ With the hook, a waiting question or plan appears as a card at the end of the se
 | Brave | Yes | Needs `brave://flags/#file-system-access-api` enabled |
 | Firefox | Yes | No, use `npx ccpreview` |
 | Safari | Yes | No, use `npx ccpreview` |
+| Chrome or Edge older than 86 | Yes | No, the page asks you to update the browser |
+| Phones and tablets | Not supported | No, the page asks you to open it on the computer that runs Claude Code |
 
 ## How it works
 

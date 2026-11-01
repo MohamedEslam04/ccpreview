@@ -1268,11 +1268,14 @@ function liveQuickList() {
 }
 // ---------- first run: a step-by-step guide for people who never used a terminal ----------
 const OS = (() => {
-  const p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '').toLowerCase();
-  return p.includes('mac') ? 'mac' : p.includes('win') ? 'win' : 'linux';
+  // every hint the browser gives, so one missing or frozen field does not decide it
+  const p = [navigator.userAgentData && navigator.userAgentData.platform, navigator.platform, navigator.userAgent].join(' ').toLowerCase();
+  return /\bwin/.test(p) ? 'win' : /\bmac|darwin/.test(p) ? 'mac' : 'linux';
 })();
 let IS_BRAVE = false;
 const IS_PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+// a Chromium browser without the folder API is just too old (it arrived in Chrome / Edge 86)
+const IS_CHROMIUM = /\b(Chrome|Chromium|Edg|OPR|Vivaldi)\//.test(navigator.userAgent || '') || !!(navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.some((b) => /Chromium/.test(b.brand)));
 let welcomeError = '';
 const BRAVE_FLAG = 'brave://flags/#file-system-access-api';
 const copyRow = (text, label) => `<span class="w-copy" dir="ltr"><code>${esc(text)}</code><button class="btn" data-copy-text="${esc(text)}">${ICON.copy}<span>${esc(label || t('welcome.copy'))}</span></button></span>`;
@@ -1293,6 +1296,9 @@ function welcomeHtml() {
       `<li><p>${t('welcome.brave_3', { on: `<b>${t('welcome.enabled')}</b>` })}</p></li>` +
       `<li><p>${t('welcome.brave_4', { btn: `<b>${t('welcome.relaunch')}</b>` })}</p></li></ol>` +
       `<p class="w-alt">${t('welcome.or_chrome')}</p>${copyRow(location.href.split('#')[0], t('welcome.copy_link'))}`;
+  } else if (sourceState === 'unsupported' && IS_CHROMIUM) {
+    body = `<h2>${t('welcome.old_title')}</h2><p>${t('welcome.old_text')}</p>` +
+      `<p class="w-alt">${t('welcome.or_chrome')}</p>${copyRow(location.href.split('#')[0], t('welcome.copy_link'))}`;
   } else if (sourceState === 'unsupported') {
     body = `<h2>${t('welcome.browser_title')}</h2><p>${t('welcome.browser_text')}</p>${copyRow(location.href.split('#')[0], t('welcome.copy_link'))}` +
       `<p class="w-alt"><a href="https://www.google.com/chrome/" target="_blank" rel="noopener">${t('welcome.get_chrome')}</a></p>`;
@@ -1303,7 +1309,13 @@ function welcomeHtml() {
       `<li><p>${t('welcome.step_open')}</p><button class="btn primary big" data-pick>${t('connect.pick')}</button></li>` +
       `<li><p>${t('welcome.step_paste_' + OS)}</p></li>` +
       `<li><p>${t('welcome.step_allow')}</p></li></ol>` +
-      (welcomeError ? `<p class="w-err" role="alert">${welcomeError}</p>` : '');
+      (welcomeError ? `<p class="w-err" role="alert">${welcomeError}</p>` : '') +
+      // the usual reasons the folder is not where step 1 says
+      `<details class="w-help"${welcomeError ? ' open' : ''}><summary>${t('welcome.help')}</summary><ul>` +
+      `<li>${t('welcome.help_hidden_' + OS)}</li>` +
+      `<li>${t('welcome.help_never')}</li>` +
+      (OS === 'win' ? `<li>${t('welcome.help_wsl', { path: '<code dir="ltr">\\\\wsl.localhost</code>' })}</li>` : '') +
+      `<li>${t('welcome.help_custom', { v: '<code dir="ltr">CLAUDE_CONFIG_DIR</code>' })}</li></ul></details>`;
   }
   return `<div class="welcome">${head}<section class="w-body">${body}</section>${safe}${dev}</div>`;
 }
