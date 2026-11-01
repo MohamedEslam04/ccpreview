@@ -2532,9 +2532,15 @@ function lbShow(scope, i) {
   img.src = url;
   if (img.complete && img.naturalWidth) img.onload();
   $('lbStrip').innerHTML = shots.length > 1 ? shots.map((sh, k) => `<button data-k="${k}" class="${k === lb.i ? 'on' : ''}"><img src="${esc(sh.getAttribute('href'))}" alt=""></button>`).join('') : '';
-  const on = $('lbStrip').querySelector('.on');
-  if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+  // center the current thumbnail in the strip (after layout, without scrolling the page)
+  requestAnimationFrame(() => {
+    const strip = $('lbStrip'), on = strip.querySelector('.on');
+    if (on) strip.scrollLeft += on.getBoundingClientRect().left + on.offsetWidth / 2 - (strip.getBoundingClientRect().left + strip.clientWidth / 2);
+  });
 }
+$('lbStrip').addEventListener('wheel', (e) => {
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); $('lbStrip').scrollLeft += isRtl() ? -e.deltaY : e.deltaY; }
+}, { passive: false });
 function lbClose() { $('lightbox').hidden = true; lb.i = -1; }
 async function lbCopy() {
   try {

@@ -339,9 +339,15 @@
   #lightbox.info .lb-next { inset-inline-end: 286px; } /* clear of the properties panel (270px + gap) */
   :root[dir="ltr"] .lb-nav svg { transform: scaleX(-1); } /* the markup draws the arrows for RTL */
   #lightbox.single .lb-nav, #lightbox.single .lb-strip { display: none; }
-  .lb-strip { flex: none; display: flex; justify-content: safe center; gap: 6px; padding: 8px 14px 4px; overflow-x: auto; }
-  .lb-strip button { flex: none; width: 54px; height: 40px; padding: 0; border: 2px solid transparent; border-radius: 6px; background: oklch(1 0 0 / .06); cursor: pointer; overflow: hidden; opacity: .6; }
-  .lb-strip button.on { border-color: var(--accent); opacity: 1; }
+  /* thumbnails: auto margins center a short strip, but a long one starts at its edge so every item stays reachable
+     (justify-content: center clips the start of an overflowing flex row) */
+  .lb-strip { flex: none; display: flex; justify-content: flex-start; gap: 6px; padding: 8px 14px 6px; overflow-x: auto; overflow-y: hidden; scroll-behavior: smooth; }
+  .lb-strip > :first-child { margin-inline-start: auto; }
+  .lb-strip > :last-child { margin-inline-end: auto; }
+  .lb-strip::-webkit-scrollbar { height: 6px; }
+  .lb-strip::-webkit-scrollbar-thumb { background: oklch(1 0 0 / .2); border-width: 1px; }
+  .lb-strip button { flex: none; width: 54px; height: 40px; padding: 0; border: 2px solid transparent; border-radius: 6px; background: oklch(1 0 0 / .06); cursor: pointer; overflow: hidden; opacity: .55; transition: opacity .15s, transform .15s var(--ease), border-color .15s; }
+  .lb-strip button.on { border-color: var(--accent); opacity: 1; transform: translateY(-2px); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 35%, transparent); }
   .lb-strip button:hover { opacity: 1; }
   .lb-strip img { width: 100%; height: 100%; object-fit: contain; }
   .lb-hint { flex: none; text-align: center; font-size: 11px; opacity: .5; padding: 2px 14px 8px; }
