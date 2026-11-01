@@ -334,3 +334,155 @@ test('pendingInTranscript: a waiting question already in the transcript is not s
   assert.strictEqual(core.pendingInTranscript({ ...p, tool: 'ExitPlanMode' }, new Set(['toolu_1'])), false);
   assert.strictEqual(core.pendingInTranscript(null, new Set(['toolu_1'])), false);
 });
+
+// ---------- session list scan: edges, progress, concurrency, persisted meta ----------
+
+const enc = (lines) => Buffer.from(lines.map((l) => l + '\n').join(''));
+const scanUser = (text, extra = {}) => line({ type: 'user', cwd: '/work/app', message: { role: 'user', content: text }, ...extra });
+const filler = (n) => Array.from({ length: n }, (_, i) => line({ type: 'assistant', message: { id: 'm' + i, content: [{ type: 'text', text: 'x'.repeat(150) }] } }));
+
+// an in-memory "folder": files keyed by "dir/id"; readEdges uses a tiny window so tests stay small
+function fakeAdapter(files, { edge = 0, delay = 0 } = {}) {
+  const calls = { readLines: [], readEdges: 0, inFlight: 0, maxInFlight: 0 };
+  const track = async (fn) => {
+    calls.inFlight++; calls.maxInFlight = Math.max(calls.maxInFlight, calls.inFlight);
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    try { return fn(); } finally { calls.inFlight--; }
+  };
+  const adapter = {
+    calls,
+    async listProjects() { return [...new Set([...files.keys()].map((k) => k.split('/')[0]))]; },
+    async listSessionFiles(dir) {
+      return [...files.entries()].filter(([k]) => k.startsWith(dir + '/')).map(([k, v]) => ({ id: k.split('/')[1], size: v.buf.length, mtime: v.mtime }));
+    },
+    async listSubagents() { return []; },
+    readLines: (ref, offset) => track(() => {
+      calls.readLines.push([`${ref.dir}/${ref.id}`, offset]);
+      const buf = files.get(`${ref.dir}/${ref.id}`).buf;
+      let reset = false;
+      if (buf.length < offset) { offset = 0; reset = true; }
+      if (buf.length === offset) return { lines: [], offset, reset };
+      const r = core.splitLines(buf.subarray(offset), new TextDecoder());
+      return { lines: r.lines, offset: offset + r.used, reset };
+    }),
+    storeImage: () => '',
+  };
+  if (edge) {
+    adapter.readEdges = (ref) => track(() => {
+      calls.readEdges++;
+      const buf = files.get(`${ref.dir}/${ref.id}`).buf;
+      if (buf.length <= edge * 2) return null;
+      return core.edgeLines(buf.subarray(0, edge), buf.subarray(buf.length - edge), buf.length);
+    });
+  }
+  return adapter;
+}
+
+test('edgeLines: complete lines of the head and tail, offset at the end of the last complete line', () => {
+  const body = enc(['{"a":1}', '{"b":2}', ...filler(40), '{"y":8}', '{"z":9}']);
+  const partial = Buffer.concat([body, Buffer.from('{"half":')]); // a line still being written
+  const size = partial.length;
+  const r = core.edgeLines(partial.subarray(0, 100), partial.subarray(size - 100), size);
+  assert.strictEqual(r.lines[0], '{"a":1}');
+  assert.strictEqual(r.lines[1], '{"b":2}');
+  assert.strictEqual(r.lines[r.lines.length - 1], '{"z":9}'); // the partial tail line is not returned
+  assert.strictEqual(r.offset, body.length);               // so the next incremental read starts right after it
+  assert.ok(!r.lines.some((l) => l.includes('half')));
+});
+
+test('edgeLines: gives up (null) when the tail holds no complete line', () => {
+  const big = Buffer.from('{"x":"' + 'a'.repeat(5000) + '"}\n');
+  assert.strictEqual(core.edgeLines(big.subarray(0, 100), big.subarray(big.length - 100), big.length), null);
+});
+
+test('updateMeta: head+tail scan gives the same meta as a full scan, then continues incrementally', async () => {
+  const lines = [scanUser('fix the login bug'), ...filler(400),
+    line({ type: 'ai-title', aiTitle: 'Login fix' }), ...filler(5),
+    line({ type: 'system', subtype: 'turn_duration' })];
+  const files = new Map([['p/s1', { buf: enc(lines), mtime: 1 }]]);
+  const a = fakeAdapter(files, { edge: 2048 });
+  const cache = new Map();
+  const m = await core.updateMeta(a, cache, { dir: 'p', id: 's1' });
+  const full = await core.updateMeta(fakeAdapter(files), new Map(), { dir: 'p', id: 's1' });
+  assert.deepStrictEqual({ ...m }, { ...full });
+  assert.strictEqual(m.title, 'Login fix');
+  assert.strictEqual(m.cwd, '/work/app');
+  assert.strictEqual(m.state, 'idle');
+  assert.strictEqual(a.calls.readEdges, 1);
+  assert.strictEqual(a.calls.readLines.length, 0, 'the middle of the file was never read');
+  // the file grows: only the new bytes are read, from where the edge scan stopped
+  const before = files.get('p/s1').buf;
+  files.set('p/s1', { buf: Buffer.concat([before, enc([line({ type: 'user', message: { role: 'user', content: 'next question' } })])]), mtime: 2 });
+  const m2 = await core.updateMeta(a, cache, { dir: 'p', id: 's1' });
+  assert.deepStrictEqual(a.calls.readLines, [['p/s1', before.length]]);
+  assert.strictEqual(m2.state, 'working');
+});
+
+test('updateMeta: falls back to a full read when the edges hold no title or prompt', async () => {
+  const lines = [...filler(50), scanUser('hidden in the middle'), ...filler(400)];
+  const files = new Map([['p/s1', { buf: enc(lines), mtime: 1 }]]);
+  const a = fakeAdapter(files, { edge: 2048 });
+  const m = await core.updateMeta(a, new Map(), { dir: 'p', id: 's1' });
+  assert.strictEqual(m.prompt, 'hidden in the middle');
+  assert.deepStrictEqual(a.calls.readLines[0], ['p/s1', 0]);
+});
+
+test('updateMeta: a small file is read whole (no edge scan result)', async () => {
+  const files = new Map([['p/s1', { buf: enc([scanUser('tiny')]), mtime: 1 }]]);
+  const a = fakeAdapter(files, { edge: 2048 });
+  const m = await core.updateMeta(a, new Map(), { dir: 'p', id: 's1' });
+  assert.strictEqual(m.prompt, 'tiny');
+});
+
+test('listSessions: reports each project as soon as it is scanned, newest first, and ends with the same list', async () => {
+  const mk = (t) => ({ buf: enc([scanUser(t)]), mtime: 0 });
+  const files = new Map([
+    ['old/a', { ...mk('old one'), mtime: 100 }],
+    ['new/a', { ...mk('new one'), mtime: 300 }],
+    ['mid/a', { ...mk('mid one'), mtime: 200 }],
+  ]);
+  const seen = [];
+  const final = await core.listSessions(fakeAdapter(files), new Map(), new Set(), (list) => seen.push(list.map((p) => p.dir)));
+  assert.deepStrictEqual(seen, [['new'], ['new', 'mid'], ['new', 'mid', 'old']]);
+  assert.deepStrictEqual(final.map((p) => p.dir), ['new', 'mid', 'old']);
+  const plain = await core.listSessions(fakeAdapter(files), new Map(), new Set());
+  assert.deepStrictEqual(final, plain);
+});
+
+test('listSessions: reads sessions of a project in parallel, but never more than the limit, and keeps the order', async () => {
+  const files = new Map();
+  for (let i = 0; i < 12; i++) files.set(`p/s${String(i).padStart(2, '0')}`, { buf: enc([scanUser('q' + i)]), mtime: 1000 - i });
+  const a = fakeAdapter(files, { delay: 5 });
+  const [proj] = await core.listSessions(a, new Map(), new Set(['*']));
+  assert.deepStrictEqual(proj.sessions.map((s) => s.title), Array.from({ length: 12 }, (_, i) => 'q' + i));
+  assert.ok(a.calls.maxInFlight > 1, 'ran in parallel');
+  assert.ok(a.calls.maxInFlight <= core.META_CONCURRENCY, 'bounded');
+});
+
+test('mapLimit: keeps result order and caps concurrency', async () => {
+  let live = 0, peak = 0;
+  const out = await core.mapLimit([5, 1, 4, 2, 3], 2, async (n) => {
+    live++; peak = Math.max(peak, live);
+    await new Promise((r) => setTimeout(r, n));
+    live--;
+    return n * 10;
+  });
+  assert.deepStrictEqual(out, [50, 10, 40, 20, 30]);
+  assert.strictEqual(peak, 2);
+});
+
+test('packMeta / unpackMeta: round trip, and anything off is ignored', () => {
+  const cache = new Map([['p/a', { offset: 120, title: 'T', custom: true, prompt: 'P', cwd: '/w', state: 'idle' }]]);
+  const packed = JSON.parse(JSON.stringify(core.packMeta(cache)));
+  const back = new Map();
+  assert.strictEqual(core.unpackMeta(back, packed), 1);
+  assert.deepStrictEqual(back.get('p/a'), cache.get('p/a'));
+  // another schema version: cached results may mean something else, so start fresh
+  assert.strictEqual(core.unpackMeta(new Map(), { ...packed, v: packed.v + 1 }), 0);
+  // damaged entries are dropped one by one, never trusted
+  const bad = { v: packed.v, entries: [['p/ok', cache.get('p/a')], ['p/neg', { ...cache.get('p/a'), offset: -1 }], ['p/str', { ...cache.get('p/a'), title: 5 }], ['p/nan', { ...cache.get('p/a'), offset: 'x' }], 'junk', null]};
+  const m = new Map();
+  assert.strictEqual(core.unpackMeta(m, bad), 1);
+  assert.deepStrictEqual([...m.keys()], ['p/ok']);
+  assert.strictEqual(core.unpackMeta(new Map(), null), 0);
+});

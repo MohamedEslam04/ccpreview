@@ -21,6 +21,12 @@
   'use strict';
 
   const PER_PROJECT = 15;
+  // Listing sessions only needs a title, a working folder and the turn state, so a first scan reads the
+  // start and the end of each transcript (EDGE_BYTES each) instead of the whole file, which can be 100+ MB.
+  const EDGE_BYTES = 256 * 1024;
+  const META_CONCURRENCY = 8; // transcripts read at once while listing
+  // Bump when scanLine / emptyMeta change what they extract: meta saved by an older version is dropped.
+  const META_V = 1;
   const MAX_RESULT = 2500;
   const MAX_INPUT = 4000;
   const MAX_DIFF = 30000;
@@ -218,34 +224,91 @@
 
   const yieldNow = () => new Promise((r) => setTimeout(r, 0));
 
+  async function scanLines(m, lines) {
+    for (let i = 0; i < lines.length; i++) {
+      if (i % 2000 === 1999) await yieldNow(); // keep the page / server responsive on huge files
+      scanLine(m, lines[i]);
+    }
+  }
+
+  // The complete lines at the start and at the end of a big file, given its first and last bytes and its size,
+  // plus the offset right after the last complete line (where an incremental read can pick up). A tail that
+  // holds no line break can't be split safely: null, and the caller reads the whole file.
+  function edgeLines(head, tail, size) {
+    const nl = tail.indexOf(10);
+    if (nl < 0) return null; // the first tail line is a fragment, dropped: it may start before the window
+    const decoder = new TextDecoder();
+    const t = splitLines(tail.subarray(nl + 1), decoder);
+    const lines = splitLines(head, decoder).lines.concat(t.lines);
+    return lines.length ? { lines, offset: size - tail.length + nl + 1 + t.used } : null;
+  }
+
   async function updateMeta(adapter, cache, ref) {
     const key = `${ref.dir}/${ref.id}`;
     let m = cache.get(key);
-    if (!m) cache.set(key, (m = emptyMeta()));
+    if (!m) {
+      cache.set(key, (m = emptyMeta()));
+      // first sight of a big transcript: its start (first prompt, folder) and end (title, state) are enough
+      const e = adapter.readEdges ? await adapter.readEdges(ref, EDGE_BYTES) : null;
+      if (e) {
+        await scanLines(m, e.lines);
+        m.offset = e.offset;
+        if (m.title || m.prompt) return m;
+        Object.assign(m, emptyMeta()); // nothing to show in the edges: read the whole file below
+      }
+    }
     const r = await adapter.readLines(ref, m.offset);
     if (r.reset) Object.assign(m, emptyMeta());
     m.offset = r.offset;
-    for (let i = 0; i < r.lines.length; i++) {
-      if (i % 2000 === 1999) await yieldNow(); // keep the page / server responsive on huge files
-      scanLine(m, r.lines[i]);
-    }
+    await scanLines(m, r.lines);
     return m;
+  }
+
+  // map with at most `limit` calls in flight; results keep the input order
+  async function mapLimit(items, limit, fn) {
+    const out = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return out;
+  }
+
+  // The meta cache as plain data (to keep it between page loads) and back. Anything that doesn't look
+  // exactly right is dropped, and a cache from another META_V is ignored: it is only a speed-up.
+  const packMeta = (cache) => ({ v: META_V, entries: [...cache] });
+  function unpackMeta(cache, data) {
+    if (!data || data.v !== META_V || !Array.isArray(data.entries)) return 0;
+    let n = 0;
+    for (const e of data.entries) {
+      const m = Array.isArray(e) && typeof e[0] === 'string' ? e[1] : null;
+      if (!m || !Number.isSafeInteger(m.offset) || m.offset < 0 || typeof m.custom !== 'boolean' ||
+          ['title', 'prompt', 'cwd', 'state'].some((k) => typeof m[k] !== 'string')) continue;
+      cache.set(e[0], { offset: m.offset, title: m.title, custom: m.custom, prompt: m.prompt, cwd: m.cwd, state: m.state });
+      n++;
+    }
+    return n;
   }
 
   const basename = (p) => String(p).replace(/[\\/]+$/, '').split(/[\\/]/).pop();
 
   // The session list, newest project first. `more`: project folders to list in full ('*' = all);
   // the others get their latest PER_PROJECT sessions.
-  async function listSessions(adapter, cache, more) {
+  // `onProgress(projects)` is called with the list so far each time another project is done (newest first),
+  // so a first load can show something before the whole scan ends.
+  async function listSessions(adapter, cache, more, onProgress) {
     more = more instanceof Set ? more : new Set(more || []);
+    // directory listings first (cheap), so projects can then be scanned newest first
+    const listed = (await mapLimit(await adapter.listProjects(), META_CONCURRENCY, async (dir) => ({
+      dir, files: (await adapter.listSessionFiles(dir)).sort((a, b) => b.mtime - a.mtime),
+    }))).filter((x) => x.files.length);
+    listed.sort((a, b) => b.files[0].mtime - a.files[0].mtime);
     const projects = [];
-    for (const dir of await adapter.listProjects()) {
-      const files = (await adapter.listSessionFiles(dir)).sort((a, b) => b.mtime - a.mtime);
-      if (!files.length) continue;
-      const sessions = [];
-      for (const f of more.has('*') || more.has(dir) ? files : files.slice(0, PER_PROJECT)) {
+    for (const { dir, files } of listed) {
+      const rows = await mapLimit(more.has('*') || more.has(dir) ? files : files.slice(0, PER_PROJECT), META_CONCURRENCY, async (f) => {
         const m = await updateMeta(adapter, cache, { dir, id: f.id });
-        if (!(m.title || m.prompt)) continue; // nothing typed yet
+        if (!(m.title || m.prompt)) return null; // nothing typed yet
         const agents = (await adapter.listSubagents(dir, f.id)).map((a) => ({
           id: a.id, mtime: a.mtime, born: a.born,
           description: (a.info && a.info.description) || '', type: (a.info && a.info.agentType) || '',
@@ -254,12 +317,14 @@
           background: !!(a.info && a.info.requestShape === 'background'),
         })).sort((a, b) => a.born - b.born);
         const active = Math.max(f.mtime, ...agents.map((a) => a.mtime));
-        sessions.push({ id: f.id, mtime: f.mtime, size: f.size, active, title: m.title || m.prompt, cwd: m.cwd, agents, state: m.state || 'idle' });
-      }
+        return { id: f.id, mtime: f.mtime, size: f.size, active, title: m.title || m.prompt, cwd: m.cwd, agents, state: m.state || 'idle' };
+      });
+      const sessions = rows.filter(Boolean);
       if (!sessions.length) continue;
       const cwd = (sessions.find((s) => s.cwd) || {}).cwd || dir;
       const wt = dir.split('-claude-worktrees-')[1]; // sessions started inside a git worktree
       projects.push({ dir, cwd, name: basename(cwd) + (wt ? ` · ${wt}` : ''), mtime: files[0].mtime, total: files.length, sessions });
+      if (onProgress) onProgress(projects.slice());
     }
     projects.sort((a, b) => b.mtime - a.mtime);
     return projects;
@@ -290,7 +355,7 @@
   const pendingInTranscript = (p, unanswered) => !!(p && p.tool === 'AskUserQuestion' && p.id && unanswered.has(p.id));
 
   return {
-    PER_PROJECT, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
-    updateMeta, listSessions, splitLines, safeDir, safeId, basename, pendingInTranscript,
+    PER_PROJECT, EDGE_BYTES, META_CONCURRENCY, META_V, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
+    updateMeta, listSessions, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
   };
 });

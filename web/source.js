@@ -55,23 +55,32 @@
   }
 
   // ---------------------------------------------------------------- folder (File System Access API)
-  const IDB_NAME = 'ccpreview', IDB_STORE = 'handles';
-  function idb(mode, fn) {
+  // The picked folder's handle lives in its own database; the session-meta cache in another one, so adding
+  // it never needs a version upgrade of the first (an upgrade waits for every other open tab to let go).
+  const DBS = { handles: ['ccpreview', 'handles'], meta: ['ccpreview-meta', 'meta'] };
+  function idb(which, mode, fn) {
+    const [name, store] = DBS[which];
     return new Promise((resolve, reject) => {
-      const open = indexedDB.open(IDB_NAME, 1);
-      open.onupgradeneeded = () => open.result.createObjectStore(IDB_STORE);
+      const open = indexedDB.open(name, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore(store);
       open.onerror = () => reject(open.error);
+      open.onblocked = () => reject(new Error('blocked'));
       open.onsuccess = () => {
-        const tx = open.result.transaction(IDB_STORE, mode);
-        const req = fn(tx.objectStore(IDB_STORE));
-        tx.oncomplete = () => resolve(req && req.result);
-        tx.onerror = () => reject(tx.error);
+        const db = open.result;
+        db.onversionchange = () => db.close();
+        const tx = db.transaction(store, mode);
+        const req = fn(tx.objectStore(store));
+        tx.oncomplete = () => { db.close(); resolve(req && req.result); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
       };
     });
   }
-  const saveHandle = (h) => idb('readwrite', (s) => s.put(h, 'projects'));
-  const loadHandle = () => idb('readonly', (s) => s.get('projects')).catch(() => null);
-  const forgetHandle = () => idb('readwrite', (s) => s.delete('projects'));
+  const saveHandle = (h) => idb('handles', 'readwrite', (s) => s.put(h, 'projects'));
+  const loadHandle = () => idb('handles', 'readonly', (s) => s.get('projects')).catch(() => null);
+  const forgetHandle = () => idb('handles', 'readwrite', (s) => s.delete('projects'));
+  const saveMeta = (d) => idb('meta', 'readwrite', (s) => s.put(d, 'projects'));
+  const loadMeta = () => idb('meta', 'readonly', (s) => s.get('projects')).catch(() => null);
+  const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).catch(() => {});
 
   async function* dirEntries(dirHandle) {
     for await (const [name, handle] of dirHandle.entries()) yield [name, handle];
@@ -98,6 +107,16 @@
       this.chain = Promise.resolve();
       this.adapter = this.makeAdapter();
     }
+    // The titles / state found by earlier visits, so a reload only reads what was added since (a speed-up only:
+    // anything unreadable or from another version is ignored and the sessions are scanned again).
+    async restoreMeta() {
+      try { this.savedSig = ''; core.unpackMeta(this.metaCache, await loadMeta()); this.savedSig = this.metaSig(); } catch (e) { /* start cold */ }
+    }
+    metaSig() {
+      let n = 0;
+      for (const m of this.metaCache.values()) n += m.offset;
+      return `${this.metaCache.size}:${n}`;
+    }
     get folderName() { return (this.root || this.pending || {}).name || ''; }
 
     // On load: reuse the folder picked last time if the browser still lets us read it.
@@ -106,7 +125,7 @@
       const h = await loadHandle();
       if (!h) return 'needs-folder';
       const perm = await h.queryPermission({ mode: 'read' });
-      if (perm === 'granted') { this.use(h); return 'ready'; }
+      if (perm === 'granted') { this.use(h); await this.restoreMeta(); return 'ready'; }
       this.pending = h;
       return 'needs-permission';
     }
@@ -122,6 +141,7 @@
       const perm = await this.pending.requestPermission({ mode: 'read' });
       if (perm !== 'granted') throw new Error('permission-denied');
       this.use(this.pending);
+      await this.restoreMeta();
     }
     async pick() {
       let h = await window.showDirectoryPicker({ id: 'ccpreview-projects', mode: 'read' });
@@ -137,10 +157,12 @@
       }
       if (!(await hasJsonlChild(h))) throw new Error('not-projects');
       await saveHandle(h);
+      await forgetMeta(); // it described another folder
       this.use(h);
     }
     async disconnect() {
       await forgetHandle();
+      await forgetMeta();
       this.root = null;
       this.pending = null;
       this.ready = false;
@@ -161,17 +183,18 @@
           return out;
         },
         async listSessionFiles(dir) {
-          const out = [];
           let dh;
-          try { dh = await self.root.getDirectoryHandle(dir); } catch (e) { return out; }
-          for await (const [name, h] of dirEntries(dh)) {
-            if (h.kind !== 'file' || !name.endsWith('.jsonl')) continue;
+          try { dh = await self.root.getDirectoryHandle(dir); } catch (e) { return []; }
+          const handles = [];
+          for await (const [name, h] of dirEntries(dh)) if (h.kind === 'file' && name.endsWith('.jsonl')) handles.push([name, h]);
+          // getFile() is an async round trip per file: a few at once instead of one after the other
+          const rows = await core.mapLimit(handles, core.META_CONCURRENCY * 2, async ([name, h]) => {
             try {
               const f = await h.getFile();
-              out.push({ id: name.slice(0, -6), size: f.size, mtime: f.lastModified });
-            } catch (e) { /* vanished */ }
-          }
-          return out;
+              return { id: name.slice(0, -6), size: f.size, mtime: f.lastModified };
+            } catch (e) { return null; /* vanished */ }
+          });
+          return rows.filter(Boolean);
         },
         async listSubagents(dir, id) {
           const out = [];
@@ -185,7 +208,7 @@
             if (!m || h.kind !== 'file') continue;
             if (m[2] === 'jsonl') files.push([m[1], h]); else metas.set(m[1], h);
           }
-          for (const [aid, h] of files) {
+          await core.mapLimit(files, core.META_CONCURRENCY, async ([aid, h]) => {
             const f = await h.getFile();
             let info = {};
             if (metas.has(aid)) { try { info = JSON.parse(await (await metas.get(aid).getFile()).text()); } catch (e) { /* partial */ } }
@@ -200,7 +223,7 @@
               self.agentBorn.set(`${dir}/${id}/${aid}`, born);
             }
             out.push({ id: aid, mtime: f.lastModified, born, info });
-          }
+          });
           return out;
         },
         async readLines(ref, offset) {
@@ -212,6 +235,16 @@
           const bytes = new Uint8Array(await f.slice(offset).arrayBuffer());
           const r = core.splitLines(bytes, new TextDecoder());
           return { lines: r.lines, offset: offset + r.used, reset };
+        },
+        // first and last bytes of a big transcript for a cheap first scan; null = read it whole (see core.updateMeta)
+        async readEdges(ref, bytes) {
+          try {
+            const f = await (await fileHandle(ref)).getFile();
+            if (f.size <= bytes * 2) return null;
+            const head = new Uint8Array(await f.slice(0, bytes).arrayBuffer());
+            const tail = new Uint8Array(await f.slice(f.size - bytes).arrayBuffer());
+            return core.edgeLines(head, tail, f.size);
+          } catch (e) { return null; }
         },
         storeImage(src) {
           // decode once per image; the same screenshot shows up on every replay
@@ -232,10 +265,15 @@
     // a web page cannot run git: that needs `npx ccpreview`
     async git() { return { unsupported: true }; }
 
-    // list scans never overlap (the meta cache is not re-entrant)
-    list({ all, more } = {}) {
+    // list scans never overlap (the meta cache is not re-entrant). `onProgress(projects)`: the list so far.
+    list({ all, more, onProgress } = {}) {
       if (!this.ready) return Promise.reject(new Error('not-connected'));
-      const job = this.chain.then(() => core.listSessions(this.adapter, this.metaCache, all ? new Set(['*']) : new Set(more || [])));
+      const job = this.chain.then(async () => {
+        const list = await core.listSessions(this.adapter, this.metaCache, all ? new Set(['*']) : new Set(more || []), onProgress);
+        const sig = this.metaSig();
+        if (sig !== this.savedSig) { this.savedSig = sig; saveMeta(core.packMeta(this.metaCache)).catch(() => {}); }
+        return list;
+      });
       this.chain = job.catch(() => {});
       return job;
     }

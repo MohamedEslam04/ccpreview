@@ -959,7 +959,10 @@ async function loadSessions() {
   if (!SRC.ready || serverOff) { renderSessions(); return; }
   try {
     // a date filter / time grouping needs every session, not just the latest 15 per project
-    sess.list = await SRC.list({ all: dateActive() || ui.groupBy === 'time', more: ui.moreProj || [] });
+    // first load only: show projects as they are scanned (newest first) instead of skeletons until the end.
+    // Later refreshes keep the list on screen and swap it once, or it would shrink while scanning.
+    const onProgress = sess.list ? undefined : (partial) => { if (!serverOff) { sess.list = partial; renderSessions(); } };
+    sess.list = await SRC.list({ all: dateActive() || ui.groupBy === 'time', more: ui.moreProj || [], onProgress });
     checkTransitions();
     setServerUi(true);
   } catch (e) {
