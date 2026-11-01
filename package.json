@@ -1,16 +1,37 @@
 {
   "name": "ccpreview",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Watch your Claude Code sessions live in the browser: split view, subagents, diffs, search, notes. Local-only.",
-  "keywords": ["claude-code", "claude", "ai-agents", "transcripts", "viewer", "developer-tools", "rtl"],
+  "keywords": [
+    "claude-code",
+    "claude",
+    "ai-agents",
+    "transcripts",
+    "viewer",
+    "developer-tools",
+    "rtl"
+  ],
   "homepage": "https://mohamedeslam04.github.io/ccpreview/",
-  "repository": { "type": "git", "url": "git+https://github.com/MohamedEslam04/ccpreview.git" },
-  "bugs": { "url": "https://github.com/MohamedEslam04/ccpreview/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MohamedEslam04/ccpreview.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MohamedEslam04/ccpreview/issues"
+  },
   "license": "MIT",
   "author": "Mohamed Eslam",
-  "bin": { "ccpreview": "bin/ccpreview.js" },
-  "files": ["bin", "lib", "web"],
-  "engines": { "node": ">=18" },
+  "bin": {
+    "ccpreview": "bin/ccpreview.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "web"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node bin/ccpreview.js",
     "dev": "node bin/ccpreview.js --no-open",
