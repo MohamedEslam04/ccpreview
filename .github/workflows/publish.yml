@@ -1,0 +1,55 @@
+name: Publish to npm
+
+# Release: bump "version" in package.json, commit, then push a matching tag:
+#   git tag v0.1.2 && git push origin v0.1.2
+# Auth is npm trusted publishing (OIDC): no npm token is stored in this repo.
+# One-time setup on npmjs.com: package marsad > Settings > Trusted publisher >
+# GitHub Actions, user MohamedEslam04, repo marsad, workflow publish.yml.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # lets npm verify this run (trusted publishing + provenance)
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # trusted publishing needs npm 11.5.1 or newer
+      - run: npm install -g npm@^11.5.1
+
+      - name: Tag matches package.json version
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $v" >&2
+            exit 1
+          fi
+
+      - run: npm test
+
+      - name: Skip if this version is already on npm
+        id: check
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if npm view "marsad@$v" version >/dev/null 2>&1; then
+            echo "marsad@$v is already published, nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.check.outputs.skip != 'true'
+        run: npm publish --provenance --access public
