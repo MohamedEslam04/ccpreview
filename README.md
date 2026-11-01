@@ -220,4 +220,4 @@ ccpreview is an independent project and is not affiliated with or endorsed by An
 
 ---
 
-Docs synced to commit 8bfc34e ("chore: 0.1.1", 2026-11-01).
+Docs synced to commit 7420f14 ("feat(onboarding): guide covers old browsers, WSL, hidden folders and CLAUDE_CONFIG_DIR; picking the home folder also works", 2026-11-01).
