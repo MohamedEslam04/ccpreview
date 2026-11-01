@@ -220,3 +220,100 @@ test('static: the app is served, path traversal is not', async () => {
 test('unknown paths are 404', async () => {
   assert.strictEqual((await request('GET', '/nope')).status, 404);
 });
+
+// ---------- pending question (written by the optional hook) ----------
+test('pending question: SSE carries it, the list marks the session asking, both clear again', async () => {
+  const dir = path.join(tmp, 'data', 'pending');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'abc-123.json');
+  const q = { questions: [{ header: 'Pick', question: 'Which one?', options: [{ label: 'A', description: 'first' }], multiSelect: false }] };
+  const write = (extra) => fs.writeFileSync(file, JSON.stringify({ session: 'abc-123', tool: 'AskUserQuestion', id: 'tu9', input: q, at: Date.now(), ...extra }));
+  const sessionState = async () => JSON.parse((await request('GET', '/api/sessions')).text)[0].sessions.find((s) => s.id === 'abc-123').state;
+
+  assert.strictEqual(await sessionState(), 'idle');
+  write();
+  assert.strictEqual(await sessionState(), 'asking');
+
+  const events = [];
+  let wake = () => {};
+  const req = http.get({ host: '127.0.0.1', port, path: '/api/stream?dir=-home-me-demo&id=abc-123', headers: { Host: `127.0.0.1:${port}` } }, (res) => {
+    let buf = '';
+    res.on('data', (c) => {
+      buf += c;
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const m = block.match(/^data: (.*)$/m);
+        if (m && !block.startsWith('event:')) events.push(...JSON.parse(m[1]));
+      }
+      wake();
+    });
+  });
+  req.on('error', () => {});
+  const until = (pred) => new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const check = () => { if (pred()) resolve(); else if (Date.now() - t0 > 5000) reject(new Error('timeout: ' + JSON.stringify(events.map((e) => e.k)))); };
+    wake = check;
+    check();
+    const iv = setInterval(() => { check(); if (pred()) clearInterval(iv); }, 100);
+    setTimeout(() => clearInterval(iv), 5200);
+  });
+  try {
+    await until(() => events.some((e) => e.k === 'pending' && e.p));
+    const ev = events.find((e) => e.k === 'pending' && e.p);
+    assert.strictEqual(ev.p.tool, 'AskUserQuestion');
+    assert.strictEqual(ev.p.id, 'tu9');
+    assert.strictEqual(ev.p.input.questions[0].question, 'Which one?');
+
+    fs.rmSync(file);
+    await until(() => events.some((e) => e.k === 'pending' && e.p === null));
+    assert.strictEqual(await sessionState(), 'idle');
+  } finally {
+    req.destroy();
+    fs.rmSync(file, { force: true });
+  }
+});
+
+test('pending question: ignored when older than 12h, malformed, for another tool or without a timestamp', async () => {
+  const dir = path.join(tmp, 'data', 'pending');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'abc-123.json');
+  const stateNow = async () => JSON.parse((await request('GET', '/api/sessions')).text)[0].sessions.find((s) => s.id === 'abc-123').state;
+  try {
+    fs.writeFileSync(file, JSON.stringify({ tool: 'AskUserQuestion', input: {}, at: Date.now() - 13 * 3600e3 }));
+    assert.strictEqual(await stateNow(), 'idle');
+    fs.writeFileSync(file, JSON.stringify({ tool: 'Bash', input: {}, at: Date.now() }));
+    assert.strictEqual(await stateNow(), 'idle');
+    fs.writeFileSync(file, JSON.stringify({ tool: 'AskUserQuestion', input: {} }));
+    assert.strictEqual(await stateNow(), 'idle', 'no timestamp');
+    fs.writeFileSync(file, '{ broken');
+    assert.strictEqual(await stateNow(), 'idle');
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+});
+
+test('pending question: a subagent stream never carries it', async () => {
+  const sub = path.join(tmp, 'projects', '-home-me-demo', 'abc-123', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'agent-a1.jsonl'), JSON.stringify({ type: 'user', isSidechain: true, message: { role: 'user', content: 'task' } }) + '\n');
+  const dir = path.join(tmp, 'data', 'pending');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'abc-123.json');
+  fs.writeFileSync(file, JSON.stringify({ tool: 'AskUserQuestion', input: {}, at: Date.now() }));
+  try {
+    const text = await new Promise((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port, path: '/api/stream?dir=-home-me-demo&id=abc-123&agent=a1', headers: { Host: `127.0.0.1:${port}` } }, (res) => {
+        let buf = '';
+        res.on('data', (c) => { buf += c; });
+        setTimeout(() => { req.destroy(); resolve(buf); }, 1600); // two pump rounds
+      });
+      req.on('error', (e) => (e.code === 'ECONNRESET' ? null : reject(e)));
+    });
+    assert.match(text, /event: ready/);
+    assert.doesNotMatch(text, /pending/);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+});
