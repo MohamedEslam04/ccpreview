@@ -324,3 +324,13 @@ test('listSessions: worktree project names get a suffix', async () => {
   const [p] = await core.listSessions(ad, new Map());
   assert.strictEqual(p.name, 'app · feat');
 });
+
+test('pendingInTranscript: a waiting question already in the transcript is not shown twice', () => {
+  const p = { tool: 'AskUserQuestion', id: 'toolu_1', input: {}, at: 1 };
+  assert.strictEqual(core.pendingInTranscript(p, new Set(['toolu_1'])), true);
+  assert.strictEqual(core.pendingInTranscript(p, new Set(['toolu_2'])), false);
+  assert.strictEqual(core.pendingInTranscript({ ...p, id: '' }, new Set([''])), false);
+  // a plan waiting for approval keeps its card: the transcript only lists it as a tool call
+  assert.strictEqual(core.pendingInTranscript({ ...p, tool: 'ExitPlanMode' }, new Set(['toolu_1'])), false);
+  assert.strictEqual(core.pendingInTranscript(null, new Set(['toolu_1'])), false);
+});

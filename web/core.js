@@ -284,8 +284,13 @@
   const safeDir = (d) => typeof d === 'string' && SAFE_DIR.test(d) && !d.startsWith('.');
   const safeId = (d) => typeof d === 'string' && SAFE_ID.test(d);
 
+  // The question the optional hook reports as waiting is already on screen when the transcript
+  // holds the same AskUserQuestion call unanswered (newer Claude Code writes it before you answer).
+  // A plan waiting for approval keeps its own card: the transcript only lists it as a tool call.
+  const pendingInTranscript = (p, unanswered) => !!(p && p.tool === 'AskUserQuestion' && p.id && unanswered.has(p.id));
+
   return {
     PER_PROJECT, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
-    updateMeta, listSessions, splitLines, safeDir, safeId, basename,
+    updateMeta, listSessions, splitLines, safeDir, safeId, basename, pendingInTranscript,
   };
 });

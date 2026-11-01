@@ -2189,11 +2189,14 @@ class Pane {
     box.querySelector('details').addEventListener('toggle', (e) => { ui.pinOpen = e.target.open; saveUi(); });
   }
 
-  // A question / plan Claude is waiting on right now (server mode with the optional hook; the
-  // transcript only gets it once answered). Folder mode never receives one.
+  // A question / plan Claude is waiting on right now (server mode with the optional hook). Older
+  // Claude Code writes it to the transcript only once answered; newer versions write the question
+  // right away, and then its own card already says it is waiting. Folder mode never receives one.
   renderWait(stick) {
     const box = this.q('.pwait');
-    const w = this.waiting;
+    const tools = this.tools || {};
+    const unanswered = new Set(Object.keys(tools).filter((id) => tools[id].classList.contains('ask-card') && tools[id].classList.contains('pending')));
+    const w = this.waiting && !window.CCPreviewCore.pendingInTranscript(this.waiting, unanswered) ? this.waiting : null;
     box.hidden = !w;
     if (!w) { box.innerHTML = ''; return; }
     const plan = w.tool === 'ExitPlanMode';
@@ -2336,6 +2339,7 @@ class Pane {
       if (el) { frag.append(el); added++; }
     });
     this.body.append(frag);
+    if (this.waiting && added) this.renderWait(false); // the transcript may now show that question itself
     touched.forEach((g) => g && updateGroup(g));
     this.scheduleInfo();
     if (userAdded) this.renderRail();
