@@ -124,8 +124,13 @@
         }
         return [];
       }
-      case 'system':
-        return o.subtype === 'compact_boundary' ? [{ k: 'divider', ts }] : [];
+      case 'system': {
+        if (o.subtype !== 'compact_boundary') return [];
+        const m = o.compactMetadata || {};
+        return [{ k: 'divider', ts, pre: m.preTokens || 0, post: m.postTokens || 0, trigger: m.trigger || '' }];
+      }
+      case 'permission-mode':
+        return o.permissionMode ? [{ k: 'pmode', v: o.permissionMode }] : [];
       case 'user': {
         if (o.isMeta) return [];
         const c = o.message && o.message.content;
@@ -159,7 +164,7 @@
         // token usage + model for the session info panel (one API message spans several lines; the UI dedupes by id)
         const u = o.message.usage;
         if (u && o.message.id) {
-          out.push({ k: 'usage', mid: o.message.id, model: o.message.model || '', ts,
+          out.push({ k: 'usage', mid: o.message.id, model: o.message.model || '', ts, eff: o.perTurnEffort || o.effort || '',
             u: { i: u.input_tokens || 0, o: u.output_tokens || 0, cr: u.cache_read_input_tokens || 0, cw: u.cache_creation_input_tokens || 0 } });
         }
         for (const b of c) {

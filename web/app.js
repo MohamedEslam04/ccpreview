@@ -1715,6 +1715,8 @@ class Pane {
   open(k, restoring) {
     if (this.es) { this.es.close(); this.es = null; }
     this.key = { dir: k.dir, id: k.id, agent: k.agent || '' };
+    this.git = null;
+    this.gitAt = 0;
     this.title = k.title || '';
     this.restoring = !!restoring;
     this.q('.ptitle').textContent = this.title;
@@ -1886,7 +1888,22 @@ class Pane {
   renderInfo() {
     const box = this.q('.pinfo');
     if (!box || box.hidden) return;
-    box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo);
+    box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo, this.git);
+    this.loadGit();
+  }
+  loadGit() {
+    // git status of the session's folder, at most every 10s and only while the panel is visible
+    if (serverOff || !SRC.ready || !this.key || this.gitBusy || Date.now() - (this.gitAt || 0) < 10e3) return;
+    const k = this.key;
+    this.gitBusy = true;
+    this.gitAt = Date.now();
+    SRC.git(k).then((g) => {
+      this.gitBusy = false;
+      if (this.key !== k) return;
+      this.git = g || { failed: true };
+      const box = this.q('.pinfo');
+      if (box && !box.hidden) box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo, this.git);
+    });
   }
   onInfoClick(e) {
     const c = e.target.closest('[data-copy]');
@@ -2241,14 +2258,22 @@ class Pane {
 // ---------- AskUserQuestion ----------
 // ---------- session stats (model, tokens, duration, activity) for the info panel ----------
 function newStats() {
-  return { msgs: new Map(), first: 0, last: 0, cwd: '', branches: [], tools: new Map(), files: new Map(), prompts: 0, errors: 0, compactions: 0, results: 0 };
+  return { msgs: new Map(), first: 0, last: 0, cwd: '', branches: [], tools: new Map(), files: new Map(), prompts: 0, errors: 0, compactions: 0, results: 0,
+    ctx: 0, ctxTs: '', ctxModel: '', maxCtx: 0, eff: '', pmode: '', compacts: [] };
 }
 function trackStats(st, ev) {
   if (ev.ts) {
     const ms = Date.parse(ev.ts);
     if (ms) { if (!st.first || ms < st.first) st.first = ms; if (ms > st.last) st.last = ms; }
   }
-  if (ev.k === 'usage') st.msgs.set(ev.mid, { model: ev.model, u: ev.u }); // one message repeats on several lines
+  if (ev.k === 'usage') {
+    st.msgs.set(ev.mid, { model: ev.model, u: ev.u }); // one message repeats on several lines
+    // what the model saw on its latest request = the context right now
+    const c = ev.u.i + ev.u.cr + ev.u.cw;
+    if (c && ev.model !== '<synthetic>' && (!st.ctxTs || (ev.ts || '') >= st.ctxTs)) { st.ctx = c; st.ctxTs = ev.ts || st.ctxTs; st.ctxModel = ev.model; }
+    if (c > st.maxCtx) st.maxCtx = c;
+    if (ev.eff) st.eff = ev.eff;
+  } else if (ev.k === 'pmode') st.pmode = ev.v;
   else if (ev.k === 'ctx') {
     st.cwd = ev.cwd;
     if (ev.branch && st.branches[st.branches.length - 1] !== ev.branch) st.branches = [...st.branches.filter((b) => b !== ev.branch), ev.branch];
@@ -2257,8 +2282,16 @@ function trackStats(st, ev) {
     if (ev.diff && ev.diff.file) st.files.set(ev.diff.file, (st.files.get(ev.diff.file) || 0) + 1);
   } else if (ev.k === 'user') st.prompts++;
   else if (ev.k === 'result') { st.results++; if (ev.err) st.errors++; }
-  else if (ev.k === 'divider') st.compactions++;
+  else if (ev.k === 'divider') {
+    st.compactions++;
+    if (ev.pre) st.compacts.push({ pre: ev.pre, post: ev.post, trigger: ev.trigger, ts: ev.ts });
+    // right after a compaction the context is the summary, until the next request reports the real size
+    if (ev.post && (!st.ctxTs || (ev.ts || '') >= st.ctxTs)) { st.ctx = ev.post; st.ctxTs = ev.ts || st.ctxTs; }
+  }
 }
+// the context window is not in the transcript: 1M for the models that ship with it, or when the session already went past 200K
+const ctxWindow = (st) => (st.maxCtx > 200e3 || /\[1m\]|opus-(4-[6-9]|5)|sonnet-5|fable/.test(st.ctxModel) ? 1e6 : 200e3);
+const tOpt = (key) => { const s = t(key); return s === key ? '' : s; }; // a label for known values only
 function tokenTotals(st) {
   const tk = { i: 0, o: 0, cr: 0, cw: 0 };
   st.msgs.forEach(({ u }) => { tk.i += u.i; tk.o += u.o; tk.cr += u.cr; tk.cw += u.cw; });
@@ -2288,10 +2321,11 @@ function statSummary(st) {
   const parts = [];
   if (models.length) parts.push(shortModel(models[0][0]));
   if (st.first && st.last > st.first) parts.push(fmtDur(st.last - st.first));
-  if (tk.all) parts.push(t('info.tokens_n', { n: fmtTok(tk.all) }));
+  if (st.ctx) parts.push(t('info.ctx_summary', { n: fmtTok(st.ctx) }));
+  else if (tk.all) parts.push(t('info.tokens_n', { n: fmtTok(tk.all) }));
   return parts.join(' · ');
 }
-function infoHtml(st, agent, sess) {
+function infoHtml(st, agent, sess, g) {
   const tk = tokenTotals(st), models = modelCounts(st);
   const row = (k, v) => `<div class="ii"><div class="ik">${k}</div><div class="iv">${v}</div></div>`;
   const chip = (txt, tip) => `<span class="ichip"${tip ? ` title="${esc(t(tip))}"` : ''}>${txt}</span>`;
@@ -2302,16 +2336,31 @@ function infoHtml(st, agent, sess) {
     : agent && agent.model ? `<span class="ichip mono">${esc(agent.model)}</span>` : '—');
   h += row(t('info.duration'), st.first
     ? `<b>${fmtDur(Math.max(0, st.last - st.first))}</b> <small>${t('info.from_to', { from: whenText(st.first), to: whenText(st.last) })}</small>` : '—');
+  if (st.ctx) {
+    const win = ctxWindow(st), pct = Math.min(100, Math.round((st.ctx / win) * 100));
+    const lc = st.compacts[st.compacts.length - 1];
+    const by = lc && (lc.trigger === 'manual' ? t('info.compact_manual') : lc.trigger === 'auto' ? t('info.compact_auto') : '');
+    h += row(t('info.ctx'), `<b title="${esc(t('info.ctx_tip'))}">${fmtTok(st.ctx)}</b> <small>${t('info.ctx_of', { n: fmtTok(win) })}</small>` +
+      `<span class="imeter ${pct >= 80 ? 'high' : pct >= 50 ? 'mid' : ''}" title="${num(pct)}%"><i style="inline-size:${pct}%"></i></span><b>${num(pct)}%</b>` +
+      (lc ? ` <small>${esc(t('info.compact_last', { when: whenText(Date.parse(lc.ts)), pre: fmtTok(lc.pre), post: fmtTok(lc.post) }) + by)}</small>` : ''));
+  }
+  if (st.pmode || st.eff) {
+    h += row(t('info.mode'), (st.pmode ? `<span class="ichip mono" title="${esc(t('info.pmode_tip'))}">${esc(st.pmode)}</span><small>${esc(tOpt('pmode.' + st.pmode))}</small> ` : '') +
+      (st.eff ? `<span class="ichip mono" title="${esc(t('info.effort_tip'))}">${esc(t('info.effort', { v: st.eff }))}</span><small>${esc(tOpt('effort.' + st.eff))}</small>` : ''));
+  }
   h += row(t('info.tokens'), tk.all
     ? `<b>${fmtTok(tk.all)}</b> ${chip(t('info.tok_in', { n: fmtTok(tk.i) }), 'info.tok_in_tip')}${chip(t('info.tok_out', { n: fmtTok(tk.o) }), 'info.tok_out_tip')}` +
-      `${chip(t('info.tok_cr', { n: fmtTok(tk.cr) }), 'info.tok_cr_tip')}${chip(t('info.tok_cw', { n: fmtTok(tk.cw) }), 'info.tok_cw_tip')} <small>${tn('info.requests', st.msgs.size, { n: num(st.msgs.size) })}</small>`
+      `${chip(t('info.tok_cr', { n: fmtTok(tk.cr) }), 'info.tok_cr_tip')}${chip(t('info.tok_cw', { n: fmtTok(tk.cw) }), 'info.tok_cw_tip')} <small>${tn('info.requests', st.msgs.size, { n: num(st.msgs.size) })}</small>` +
+      `<small style="width:100%">${t('info.tokens_note')}</small>`
     : '—');
   const dir = (agent && agent.worktree) || st.cwd;
   h += row(t('info.folder'), dir ? path(dir) : '—');
-  if (st.branches.length || (agent && agent.worktreeBranch)) {
+  // the git row already names the branch; keep this row when the session moved between branches
+  if ((st.branches.length || (agent && agent.worktreeBranch)) && !(g && g.repo && st.branches.length <= 1)) {
     const brs = st.branches.length ? st.branches : [agent.worktreeBranch];
     h += row(t('info.branch'), brs.map((b) => `<span class="ichip mono">${esc(b)}</span>`).join(' '));
   }
+  h += gitRow(g, row);
   if (agent) {
     const flags = [agent.type && `<span class="ichip mono">${esc(agent.type)}</span>`, agent.background && chip(t('info.background')),
       agent.worktree && chip(t('info.worktree')), agent.finished ? `<span class="ichip ok">${t('info.finished')}</span>` : `<span class="ichip live">${t('info.running')}</span>`].filter(Boolean);
@@ -2332,6 +2381,40 @@ function infoHtml(st, agent, sess) {
     }).join('') + (files.length > 40 ? `<small>${t('info.more_files', { n: num(files.length - 40) })}</small>` : '') + '</div>');
   }
   return h + '</div>';
+}
+
+function gitRow(g, row) {
+  const label = t('info.git');
+  if (!g) return serverOff || !SRC.ready ? '' : row(label, `<small>${t('git.loading')}</small>`);
+  if (g.unsupported) return row(label, `<small>${t('git.needs_server')}</small>`);
+  if (g.failed) return row(label, `<small>${t('git.failed')}</small>`);
+  if (!g.repo) return row(label, `<small>${t(g.gone ? 'git.gone' : 'git.not_repo')}</small>`);
+  const counts = { staged: 0, changed: 0, untracked: 0, conflict: 0 };
+  g.files.forEach(({ x, y }) => {
+    if (x === '?') counts.untracked++;
+    else if (x === 'U' || y === 'U' || (x === 'A' && y === 'A') || (x === 'D' && y === 'D')) counts.conflict++;
+    else { if (x !== ' ') counts.staged++; if (y !== ' ') counts.changed++; }
+  });
+  const chip = (cls, txt, tip) => `<span class="ichip${cls ? ' ' + cls : ''}"${tip ? ` title="${esc(t(tip))}"` : ''}>${txt}</span>`;
+  let v = `<span class="ichip mono">${esc(g.branch || 'HEAD')}</span>` + (g.upstream ? `<small dir="ltr">${esc(g.upstream)}</small>` : `<small>${t('git.no_upstream')}</small>`);
+  if (g.ahead) v += chip('warn', t('git.ahead', { n: num(g.ahead) }), 'git.ahead_tip');
+  if (g.behind) v += chip('warn', t('git.behind', { n: num(g.behind) }), 'git.behind_tip');
+  if (!g.total) v += chip('ok', t('git.clean'));
+  else {
+    if (counts.conflict) v += chip('bad', t('git.conflict', { n: num(counts.conflict) }));
+    if (counts.staged) v += chip('', t('git.staged', { n: num(counts.staged) }));
+    if (counts.changed) v += chip('warn', t('git.modified', { n: num(counts.changed) }));
+    if (counts.untracked) v += chip('', t('git.untracked', { n: num(counts.untracked) }));
+  }
+  if (g.stash) v += chip('', t('git.stash', { n: num(g.stash) }));
+  if (g.last) v += `<small style="width:100%" dir="auto">${t('git.last', { sha: `<span class="mono">${esc(g.last.sha)}</span>`, subject: esc(g.last.subject), ago: ago(g.last.at) })}</small>`;
+  if (g.total) {
+    const cls = (x, y) => (x === '?' ? 'gQ' : x === 'D' || y === 'D' ? 'gD' : x === 'A' ? 'gA' : 'gM');
+    v += '<div class="igit">' + g.files.slice(0, 30).map(({ x, y, f }) =>
+      `<div class="${cls(x, y)}" title="${esc(f)}"><b>${esc((x + y).replace(/ /g, '·'))}</b><span>${esc(f)}</span></div>`).join('') +
+      (g.total > 30 ? `<div><span>${t('git.more', { n: num(g.total - 30) })}</span></div>` : '') + '</div>';
+  }
+  return row(label, v);
 }
 
 function askHtml(questions) {

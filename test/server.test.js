@@ -5,6 +5,7 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { createServer } = require('../lib/server.js');
 
 let app, port, tmp;
@@ -35,6 +36,27 @@ test.before(async () => {
     { type: 'system', subtype: 'turn_duration' },
   ];
   fs.writeFileSync(path.join(dir, 'abc-123.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+  // sessions whose cwd is a real git repo, a plain folder and a folder that is gone
+  const repo = path.join(tmp, 'repo');
+  const plain = path.join(tmp, 'plain');
+  fs.mkdirSync(repo);
+  fs.mkdirSync(plain);
+  const git = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...a], { cwd: repo, stdio: 'ignore' });
+  git('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'first commit');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n');
+  fs.writeFileSync(path.join(repo, 'new.txt'), 'x\n');
+  // no prompt or title, so these stay out of the session list; the last cwd in the file is the one that counts
+  const session = (id, cwd) => fs.writeFileSync(path.join(dir, id + '.jsonl'), [
+    { type: 'system', subtype: 'x', cwd: '/old/place' },
+    { type: 'system', subtype: 'x', cwd },
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+  session('git-repo', repo);
+  session('git-plain', plain);
+  session('git-gone', path.join(tmp, 'deleted'));
   app = createServer({ projects, dataDir: path.join(tmp, 'data'), version: '9.9.9' });
   await new Promise((resolve) => app.listen(0, (p) => { port = p; resolve(); }));
 });
@@ -108,6 +130,45 @@ test('/api/stream replays converted events then signals ready', async () => {
   });
   assert.match(text, /"k":"user"/);
   assert.match(text, /"text":"done"/);
+});
+
+test('/api/git reports the repo of the cwd found in the transcript', async () => {
+  const r = await request('GET', '/api/git?dir=-home-me-demo&id=git-repo');
+  assert.strictEqual(r.status, 200);
+  const g = JSON.parse(r.text);
+  assert.strictEqual(g.repo, true);
+  assert.strictEqual(g.cwd, path.join(tmp, 'repo'));
+  assert.strictEqual(g.branch, 'main');
+  assert.strictEqual(g.upstream, '');
+  assert.strictEqual(g.total, 2);
+  assert.deepStrictEqual(g.files.map((f) => [f.x, f.y, f.f]).sort(), [[' ', 'M', 'a.txt'], ['?', '?', 'new.txt']]);
+  assert.strictEqual(g.last.subject, 'first commit');
+  assert.strictEqual(g.stash, 0);
+});
+
+test('/api/git for a non-repo folder is repo:false, and a deleted folder is gone', async () => {
+  const plain = JSON.parse((await request('GET', '/api/git?dir=-home-me-demo&id=git-plain')).text);
+  assert.strictEqual(plain.repo, false);
+  assert.ok(!plain.gone);
+  const gone = JSON.parse((await request('GET', '/api/git?dir=-home-me-demo&id=git-gone')).text);
+  assert.deepStrictEqual([gone.repo, gone.gone], [false, true]);
+});
+
+test('/api/git validates dir, id and agent like /api/stream', async () => {
+  for (const q of ['dir=..&id=git-repo', 'dir=-home-me-demo&id=..%2F..%2Fx', 'dir=-home-me-demo&id=git-repo&agent=..%2Fx', 'dir=.hidden&id=git-repo']) {
+    assert.strictEqual((await request('GET', '/api/git?' + q)).status, 400, q);
+  }
+  assert.strictEqual((await request('GET', '/api/git?dir=-home-me-demo&id=nope')).status, 404);
+});
+
+test('/api/git ignores a cwd or path passed in the request', async () => {
+  const r = await request('GET', `/api/git?dir=-home-me-demo&id=git-plain&cwd=${encodeURIComponent(path.join(tmp, 'repo'))}`);
+  assert.strictEqual(JSON.parse(r.text).repo, false);
+});
+
+test('/api/git keeps the Host check', async () => {
+  const r = await request('GET', '/api/git?dir=-home-me-demo&id=git-repo', { headers: { Host: 'evil.example' } });
+  assert.strictEqual(r.status, 403);
 });
 
 test('PUT /api/pages without Origin is 403 and writes nothing', async () => {

@@ -427,6 +427,15 @@
   .ifile:hover { background: var(--hover); }
   .ifile small { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .ifile b { color: var(--muted); font-size: 11px; margin-inline-start: auto; }
+  .imeter { position: relative; width: 140px; height: 6px; border-radius: 999px; background: var(--hover); overflow: hidden; align-self: center; }
+  .imeter i { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: inherit; background: var(--live); }
+  .imeter.mid i { background: oklch(0.72 0.15 75); } .imeter.high i { background: var(--err); }
+  .igit { display: grid; grid-template-columns: minmax(0, max-content); justify-content: start; gap: 1px; width: 100%; margin-top: 2px; font-family: var(--mono); font-size: 11px; }
+  .igit div { display: flex; gap: 8px; min-width: 0; max-width: 100%; padding: 1px 6px; direction: ltr; }
+  .igit b { flex: none; width: 2ch; font-weight: 600; }
+  .igit span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .igit .gM b { color: oklch(0.66 0.14 75); } .igit .gA b { color: var(--live); } .igit .gD b { color: var(--err); } .igit .gQ b { color: var(--faint); }
+  .ichip.warn { color: oklch(0.6 0.15 65); background: color-mix(in oklch, oklch(0.72 0.15 75) 14%, transparent); }
   #panes[data-n="3"] .pinfo, #panes[data-n="4"] .pinfo { padding-inline: 12px; }
   #panes[data-n="3"] .info-grid, #panes[data-n="4"] .info-grid { grid-template-columns: 1fr; gap: 2px; }
   #panes[data-n="3"] .ik, #panes[data-n="4"] .ik { margin-top: 6px; }

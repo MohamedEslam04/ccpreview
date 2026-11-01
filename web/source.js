@@ -10,6 +10,7 @@
  *   source.ready                true when sessions can be listed
  *   source.list({ all, more })  -> Promise<projects>
  *   source.open(ref, handlers)  -> { close() }   handlers: reset(), events(list), ready()
+ *   source.git(ref)             -> Promise<git status of the session's folder | { unsupported: true } | null on failure>
  */
 (function () {
   'use strict';
@@ -33,6 +34,14 @@
       const r = await fetch('/api/sessions' + qs);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
+    }
+    // git status of the folder named in the transcript (the server never takes a folder from the page)
+    async git(ref) {
+      const qs = `dir=${encodeURIComponent(ref.dir)}&id=${encodeURIComponent(ref.id)}` + (ref.agent ? `&agent=${encodeURIComponent(ref.agent)}` : '');
+      try {
+        const r = await fetch('/api/git?' + qs);
+        return r.ok ? await r.json() : null;
+      } catch (e) { return null; }
     }
     open(ref, h) {
       const qs = `dir=${encodeURIComponent(ref.dir)}&id=${encodeURIComponent(ref.id)}` + (ref.agent ? `&agent=${encodeURIComponent(ref.agent)}` : '');
@@ -216,6 +225,9 @@
         },
       };
     }
+
+    // a web page cannot run git: that needs `npx marsad`
+    async git() { return { unsupported: true }; }
 
     // list scans never overlap (the meta cache is not re-entrant)
     list({ all, more } = {}) {

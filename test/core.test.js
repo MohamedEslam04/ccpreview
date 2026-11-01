@@ -156,6 +156,25 @@ test('convert: meta lines, titles and compaction', () => {
   assert.strictEqual(core.convert(line({ type: 'system', subtype: 'compact_boundary', timestamp: 't' }), false)[0].k, 'divider');
 });
 
+test('convert: compact_boundary carries the token counts and trigger', () => {
+  const [ev] = core.convert(line({ type: 'system', subtype: 'compact_boundary', timestamp: 't', compactMetadata: { trigger: 'auto', preTokens: 170000, postTokens: 12000 } }), false);
+  assert.deepStrictEqual(ev, { k: 'divider', ts: 't', pre: 170000, post: 12000, trigger: 'auto' });
+  const [bare] = core.convert(line({ type: 'system', subtype: 'compact_boundary', timestamp: 't' }), false);
+  assert.deepStrictEqual(bare, { k: 'divider', ts: 't', pre: 0, post: 0, trigger: '' });
+});
+
+test('convert: permission-mode lines become a pmode event', () => {
+  assert.deepStrictEqual(core.convert(line({ type: 'permission-mode', permissionMode: 'auto' }), false), [{ k: 'pmode', v: 'auto' }]);
+  assert.deepStrictEqual(core.convert(line({ type: 'permission-mode' }), false), []);
+});
+
+test('convert: usage events carry the effort', () => {
+  const mk = (extra) => line({ type: 'assistant', timestamp: 't', ...extra, message: { id: 'm1', model: 'x', usage: { input_tokens: 1 }, content: [] } });
+  assert.strictEqual(core.convert(mk({ perTurnEffort: 'high', effort: 'low' }), false)[0].eff, 'high');
+  assert.strictEqual(core.convert(mk({ effort: 'low' }), false)[0].eff, 'low');
+  assert.strictEqual(core.convert(mk({}), false)[0].eff, '');
+});
+
 test('splitLines: keeps a partial trailing line for the next read', () => {
   const dec = new TextDecoder();
   const bytes = Buffer.from('{"a":1}\n{"b":2}\n{"c"');
