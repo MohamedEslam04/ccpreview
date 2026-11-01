@@ -1,0 +1,19 @@
+{
+  "name": "marsad",
+  "version": "0.1.0",
+  "description": "Watch your Claude Code sessions live in the browser: split view, subagents, diffs, search, notes. Local-only.",
+  "keywords": ["claude-code", "claude", "ai-agents", "transcripts", "viewer", "developer-tools", "rtl"],
+  "homepage": "https://mohamedeslam04.github.io/marsad/",
+  "repository": { "type": "git", "url": "git+https://github.com/MohamedEslam04/marsad.git" },
+  "bugs": { "url": "https://github.com/MohamedEslam04/marsad/issues" },
+  "license": "MIT",
+  "author": "Mohamed Eslam",
+  "bin": { "marsad": "bin/marsad.js" },
+  "files": ["bin", "lib", "web"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node bin/marsad.js",
+    "dev": "node bin/marsad.js --no-open",
+    "test": "node --test test/"
+  }
+}
