@@ -562,3 +562,53 @@ test('a prompt that only mentions <agent-message> stays the user\'s prompt', () 
   const [ev] = core.convert(userMsg('what is an <agent-message> block?'), false);
   assert.deepStrictEqual([ev.k, ev.text], ['user', 'what is an <agent-message> block?']);
 });
+
+// ---------- background shells / monitors: the command, the task id and the file it writes ----------
+
+const asst = (block) => line({ type: 'assistant', timestamp: 'tb', message: { content: [block] } });
+const toolResult = (id, text, toolUseResult) => line({ type: 'user', timestamp: 'tb', toolUseResult, message: { content: [{ type: 'tool_result', tool_use_id: id, content: text }] } });
+
+test('a Bash call with run_in_background carries its full command and description as bg', () => {
+  const cmd = 'make test > /tmp/f1.log 2>&1; tail -5 /tmp/f1.log\nmake lint';
+  const [ev] = core.convert(asst({ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: cmd, description: 'Run suite', run_in_background: true } }), false);
+  assert.deepStrictEqual(ev.bg, { cmd, desc: 'Run suite', monitor: false });
+  const [fg] = core.convert(asst({ type: 'tool_use', id: 'tu2', name: 'Bash', input: { command: 'ls' } }), false);
+  assert.strictEqual(fg.bg, undefined);
+});
+
+test('a Monitor call is a background watcher with its command', () => {
+  const [ev] = core.convert(asst({ type: 'tool_use', id: 'tu3', name: 'Monitor', input: { description: 'dev server restarts', command: 'tail -F app.log | grep FATAL', timeout_ms: 1800000 } }), false);
+  assert.deepStrictEqual(ev.bg, { cmd: 'tail -F app.log | grep FATAL', desc: 'dev server restarts', monitor: true });
+});
+
+test('the result of a background start names the task (Bash: backgroundTaskId, Monitor: taskId)', () => {
+  const bash = core.convert(toolResult('tu1', 'Command running in background with ID: bqwy5npw2. Output is being written to: /tmp/x.output.', { backgroundTaskId: 'bqwy5npw2' }), false)[0];
+  assert.strictEqual(bash.task, 'bqwy5npw2');
+  const mon = core.convert(toolResult('tu3', 'Monitor started (task b7mwzxtpb, expires in 30m)', { taskId: 'b7mwzxtpb', timeoutMs: 1800000 }), false)[0];
+  assert.strictEqual(mon.task, 'b7mwzxtpb');
+  const plain = core.convert(toolResult('tu4', 'ok', { stdout: 'ok' }), false)[0];
+  assert.strictEqual(plain.task, undefined);
+});
+
+test('TaskStop / KillShell name the task they stop', () => {
+  const [a] = core.convert(asst({ type: 'tool_use', id: 's1', name: 'TaskStop', input: { task_id: 'btd8g1fb3' } }), false);
+  assert.strictEqual(a.stop, 'btd8g1fb3');
+  const [b] = core.convert(asst({ type: 'tool_use', id: 's2', name: 'KillShell', input: { shell_id: 'abc' } }), false);
+  assert.strictEqual(b.stop, 'abc');
+});
+
+test('cmdPaths: files a command writes (>, >>, tee) and reads (tail / cat / grep / <), /dev/* left out', () => {
+  const p = core.cmdPaths('make test > /tmp/a.log 2>&1; tail -5 /tmp/a.log; tee -a ./b.txt < ~/in.csv | grep foo /var/log/c.log >> /dev/null');
+  assert.deepStrictEqual(p, [
+    { path: '/tmp/a.log', mode: 'w' },
+    { path: './b.txt', mode: 'w' },
+    { path: '~/in.csv', mode: 'r' },
+    { path: '/var/log/c.log', mode: 'r' },
+  ]);
+});
+
+test('cmdPaths: a path that is only mentioned has no mode; repeats collapse, writing wins', () => {
+  assert.deepStrictEqual(core.cmdPaths('uv run /app/main.py --out=/data/x.json'), [{ path: '/app/main.py', mode: '' }, { path: '/data/x.json', mode: '' }]);
+  assert.deepStrictEqual(core.cmdPaths('cat /tmp/z; echo hi > /tmp/z'), [{ path: '/tmp/z', mode: 'w' }]);
+  assert.deepStrictEqual(core.cmdPaths(''), []);
+});

@@ -23,12 +23,14 @@ const WIDTHS = {
 };
 const WIDTH_ORDER = ['sm', 'md', 'lg', 'full'];
 
+const STRIP_MAX = 6; // chips a subagent / background strip shows before it folds the rest behind "+N more"
 const ICON = {
   lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
   chevDown: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+  chevUp: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
   page: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 12v6M9 15h6"/></svg>',
   auto: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
@@ -1615,6 +1617,7 @@ class Pane {
       `<button class="icon-btn" data-a="split" data-i18n-title="pane.split_tip">${SPLIT_ICON}</button>` +
       `<button class="icon-btn" data-a="close" data-i18n-title="pane.close_tip">${ICON.x}</button></header>` +
       '<div class="pagents" hidden></div>' +
+      '<div class="pbg" hidden></div><div class="pbg-view" hidden></div>' +
       '<div class="pinfo" hidden></div>' +
       '<div class="psearch" hidden><div class="ps-row">' +
       '<label class="field ps-field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="ps-q" data-i18n-placeholder="pane.search_ph" autocomplete="off" spellcheck="false"></label>' +
@@ -1648,6 +1651,10 @@ class Pane {
     this.q('.phead').addEventListener('click', (e) => this.onHead(e));
     this.q('.pagents').addEventListener('click', (e) => this.onAgents(e));
     this.q('.pinfo').addEventListener('click', (e) => this.onInfoClick(e));
+    this.q('.pbg').addEventListener('click', (e) => this.onBg(e));
+    this.q('.pagents').addEventListener('input', (e) => this.onStripInput('agents', e, () => this.renderHead()));
+    this.q('.pbg').addEventListener('input', (e) => this.onStripInput('bg', e, () => this.renderBg(true)));
+    this.q('.pbg-view').addEventListener('click', (e) => this.onBgView(e));
     if (ui.infoOpen) { this.q('.pinfo').hidden = false; this.q('[data-a="info"]').classList.add('on'); }
     this.q('.pjump').onclick = () => this.toBottom(true);
     this.rail = this.q('.prail');
@@ -1856,6 +1863,10 @@ class Pane {
 
   reset() {
     this.stats = newStats();
+    this.bg = new Map(); // tool id -> background command / watcher started by this session
+    this.bgSel = null;
+    this.stopBgPoll();
+    if (this.el) this.renderBg(true);
     this.waiting = null;
     if (this.el) this.renderWait();
     if (this.el) this.renderInfo();
@@ -1876,6 +1887,7 @@ class Pane {
   open(k, restoring) {
     if (this.es) { this.es.close(); this.es = null; }
     this.key = { dir: k.dir, id: k.id, agent: k.agent || '' };
+    this.strip = {};
     this.git = null;
     this.gitAt = 0;
     this.title = k.title || '';
@@ -1906,6 +1918,7 @@ class Pane {
   }
 
   destroy() {
+    this.stopBgPoll();
     if (this.es) { this.es.close(); this.es = null; }
     this.hits = [];
     this.el.remove();
@@ -1945,6 +1958,7 @@ class Pane {
     }
     this.renderSummary();
     this.renderInfo();
+    this.renderBg(true);
     // subagents of this session, live ones first: click to open here, Ctrl+click for a new pane
     const agents = (s.agents || []).slice().sort((x, y) => (isLive(y.mtime) - isLive(x.mtime)) || (y.born - x.born));
     if (!agents.length) { bar.hidden = true; return; }
@@ -1963,16 +1977,11 @@ class Pane {
         `<span class="pa-st">${icon}</span><span class="pa-t" dir="auto">${esc(x.description || 'subagent')}</span>` +
         (x.type ? `<span class="pa-type">${esc(x.type)}</span>` : '') + '</button>';
     };
-    const count = (cls, key, n) => `<span class="pa-count ${cls}" title="${esc(t(key + '_tip', { n: num(n) }))}">${t(key, { n: num(n) })}</span>`;
-    const running = agents.filter(isRunning), rest = agents.filter((x) => !isRunning(x));
-    bar.innerHTML = `<span class="pa-label">${t('agents.title')}` +
-      (liveN ? count('live', 'agents.n_live', liveN) : '') +
-      (doneN ? count('done', 'agents.n_done', doneN) : '') +
-      (stoppedN ? count('done', 'agents.n_stopped', stoppedN) : '') + '</span>' +
-      (a ? `<button class="chip pa parent" data-parent>${ICON.chev}${t('pane.parent')}</button>` : '') +
-      running.map(chip).join('') +
-      (running.length && rest.length ? '<span class="pa-sep"></span>' : '') +
-      rest.map(chip).join('');
+    const group = (x) => (isRunning(x) ? 'run' : stateOf(x) === 'done' ? 'done' : 'other');
+    const items = agents.slice().sort((x, y) => (group(x) === 'run' ? 0 : 1) - (group(y) === 'run' ? 0 : 1)).map((x) => ({
+      g: group(x), hay: [x.description, x.type, x.model].join(' ').toLowerCase(), html: chip(x) }));
+    this.paintStrip('agents', bar, t('agents.title'), items, [['run', 'live', 'agents.n_live'], ['done', 'done', 'agents.n_done'], ['other', 'done', 'agents.n_stopped']],
+      a ? `<button class="chip pa parent" data-parent>${ICON.chev}${t('pane.parent')}</button>` : '');
     bar.hidden = false;
   }
 
@@ -1990,6 +1999,7 @@ class Pane {
   }
 
   onAgents(e) {
+    if (this.onStrip('agents', e, () => this.renderHead())) return;
     const b = e.target.closest('[data-agent],[data-parent]');
     if (!b) return;
     const target = b.dataset.agent
@@ -2023,6 +2033,179 @@ class Pane {
     toast(t('pages.added_as', { n: state.pages.length }));
   }
 
+  // ---------- long chip strips (subagents, background tasks) ----------
+  // Up to STRIP_MAX chips sit in one row. Past that, the row keeps the first STRIP_MAX (running ones first, then the
+  // latest) and adds "+N more"; opening it wraps every chip over several rows and gives a search box, and
+  // the counts turn into filters (running / done / failed or stopped).
+  stripUi(kind) { const m = this.strip || (this.strip = {}); return m[kind] || (m[kind] = { open: false, f: '', q: '' }); }
+  paintStrip(kind, bar, label, items, groups, lead, force) {
+    const u = this.stripUi(kind);
+    const big = items.length > STRIP_MAX;
+    if (!big) { u.open = false; u.f = ''; u.q = ''; }
+    const q = u.q.trim().toLowerCase();
+    let shown = items.filter((i) => (!u.f || i.g === u.f) && (!q || i.hay.includes(q)));
+    let more = 0;
+    if (big && !u.open && !u.f && !q) {
+      more = shown.length - STRIP_MAX; // the list is sorted running first, so those are the ones that stay
+      shown = shown.slice(0, STRIP_MAX);
+    }
+    const counts = groups.map(([g, cls, key]) => {
+      const n = items.filter((i) => i.g === g).length;
+      if (!n) return '';
+      const tip = esc(t(key + '_tip', { n: num(n) }));
+      return big ? `<button class="pa-count ${cls}${u.f === g ? ' on' : ''}" data-flt="${g}" title="${tip}">${t(key, { n: num(n) })}</button>`
+        : `<span class="pa-count ${cls}" title="${tip}">${t(key, { n: num(n) })}</span>`;
+    }).join('');
+    const tools = big ? `<span class="sx-tools"><label class="sx-field"><input class="sx-q" type="search" value="${esc(u.q)}" placeholder="${esc(t('strip.filter'))}" autocomplete="off" spellcheck="false"></label>` +
+      `<button class="icon-btn sx-toggle${u.open ? ' on' : ''}" data-sx="toggle" title="${esc(t(u.open ? 'strip.less' : 'strip.all', { n: num(items.length) }))}">${u.open ? ICON.chevUp : ICON.chevDown}</button></span>` : '';
+    const body = shown.map((i, k) => (k && !u.open && shown[k - 1].g === 'run' && i.g !== 'run' ? '<span class="pa-sep"></span>' : '') + i.html).join('') +
+      (!shown.length ? `<span class="sx-none">${t('strip.none')}</span>` : '');
+    // "+N more" sits before the chips: at the end of a scrolling row it would be off-screen
+    const moreBtn = more ? `<button class="chip pa more" data-sx="more" title="${esc(t('strip.all', { n: num(items.length) }))}">${t('strip.more', { n: num(more) })}</button>` : '';
+    const html = `<span class="pa-label"${kind === 'bg' ? ` title="${esc(t('bg.tip'))}"` : ''}>${label}${counts}</span>${tools}${moreBtn}${lead || ''}${body}`;
+    bar.classList.toggle('open', big && u.open);
+    if (!force && bar._html === html) return;
+    bar._html = html;
+    const a = document.activeElement, typing = a && a.classList && a.classList.contains('sx-q') && bar.contains(a);
+    const at = typing ? a.selectionStart : 0;
+    bar.innerHTML = html;
+    if (typing) { const i = bar.querySelector('.sx-q'); i.focus(); i.setSelectionRange(at, at); }
+  }
+  // clicks and typing on a strip's own controls; true when handled
+  onStrip(kind, e, repaint) {
+    const u = this.stripUi(kind);
+    const f = e.target.closest('[data-flt]'), x = e.target.closest('[data-sx]');
+    if (f) { u.f = u.f === f.dataset.flt ? '' : f.dataset.flt; u.open = u.open || !!u.f; }
+    else if (x) u.open = x.dataset.sx === 'more' ? true : !u.open;
+    else return false;
+    repaint();
+    return true;
+  }
+  onStripInput(kind, e, repaint) {
+    if (!e.target.classList.contains('sx-q')) return;
+    const u = this.stripUi(kind);
+    u.q = e.target.value;
+    if (u.q) u.open = true;
+    repaint();
+  }
+
+  // ---------- background commands and watchers ----------
+  // What the session left running: Bash run_in_background and Monitor calls. The transcript gives the command, the
+  // task id (from the result of the call) and how it ended (the <task-notification> / a TaskStop); the live output
+  // is the tail of the file Claude Code writes it to, which the server reads (see /api/task).
+  trackBg(ev) {
+    if (ev.k === 'tool' && ev.bg) this.bg.set(ev.id, { tool: ev.id, ...ev.bg, ts: ev.ts, task: '', status: '', exit: null, event: '' });
+    else if (ev.k === 'result' && ev.task) { const e = this.bg.get(ev.id); if (e) e.task = ev.task; }
+    else if (ev.k === 'task' && ev.taskId) {
+      const e = this.bgOf(ev.taskId);
+      if (e) { if (ev.status) { e.status = ev.status; e.endTs = ev.ts; } if (ev.detail) e.event = ev.detail; }
+    } else if (ev.k === 'tool' && ev.stop) {
+      const e = this.bgOf(ev.stop);
+      if (e && !e.status) { e.status = 'stopped'; e.endTs = ev.ts; }
+    }
+  }
+  bgOf(task) { for (const e of this.bg.values()) if (e.task === task) return e; return null; }
+  renderBg(force) {
+    const bar = this.q('.pbg');
+    if (!bar) return;
+    const list = [...this.bg.values()];
+    if (!list.length) { bar.hidden = true; this._bgHtml = ''; this.closeBg(); return; }
+    const rank = (e) => (bgState(e) === 'running' ? 0 : 1);
+    const chip = (e) => {
+      const st = bgState(e);
+      const icon = st === 'running' ? '<span class="spin"></span>' : st === 'done' ? ICON.check : st === 'failed' ? ICON.x : '<span class="dot"></span>';
+      const label = e.desc || e.cmd.split('\n')[0] || e.task;
+      return `<button class="chip pa bgc ${st}${this.bgSel === e.tool ? ' cur' : ''}" data-bg="${esc(e.tool)}" title="${esc(`${t('bg.st.' + st)} · ${e.cmd.slice(0, 300)}`)}">` +
+        `<span class="pa-st">${icon}</span><span class="pa-t" dir="auto">${esc(label)}</span>` +
+        (e.monitor ? `<span class="pa-type">${esc(t('bg.monitor'))}</span>` : '') + '</button>';
+    };
+    const group = (e) => ({ running: 'run', done: 'done' }[bgState(e)] || 'other');
+    const items = list.slice().sort((a, b) => rank(a) - rank(b) || Date.parse(b.ts || 0) - Date.parse(a.ts || 0)).map((e) => ({
+      g: group(e), hay: [e.desc, e.cmd, e.task].join(' ').toLowerCase(), html: chip(e) }));
+    this.paintStrip('bg', bar, t('bg.title'), items, [['run', 'live', 'bg.n_run'], ['done', 'done', 'bg.n_done'], ['other', 'done', 'bg.n_other']], '', force);
+    bar.hidden = false;
+    if (this.bgSel) this.paintBgHead();
+  }
+  onBg(e) {
+    if (this.onStrip('bg', e, () => this.renderBg(true))) return;
+    const b = e.target.closest('[data-bg]');
+    if (!b) return;
+    if (this.bgSel === b.dataset.bg) this.closeBg(); else this.openBg(b.dataset.bg);
+    this.renderBg(true);
+  }
+  closeBg() {
+    this.bgSel = null;
+    this.stopBgPoll();
+    const v = this.q('.pbg-view');
+    if (v) { v.hidden = true; v.innerHTML = ''; }
+  }
+  openBg(tool) {
+    const e = this.bg.get(tool);
+    if (!e) return;
+    this.stopBgPoll();
+    this.bgSel = tool;
+    this.bgSig = '';
+    const files = cmdPaths(e.cmd);
+    const copy = (txt, tip) => `<button class="icopy" data-copy="${esc(txt)}" title="${esc(t(tip))}">${ICON.copy}</button>`;
+    const v = this.q('.pbg-view');
+    v.innerHTML = '<div class="bgv-head"><span class="bgv-st"></span><span class="bgv-meta"></span>' +
+        `<button class="icon-btn" data-bgv="close" title="${esc(t('bg.close'))}">${ICON.x}</button></div>` +
+      `<div class="bgv-sec"><div class="bgv-k">${t('bg.command')}<button class="icopy" data-copy="${esc(e.cmd)}" title="${esc(t('bg.copy_cmd'))}">${ICON.copy}</button></div>` +
+        `<pre class="bgv-cmd" dir="ltr">${esc(e.cmd)}</pre></div>` +
+      (files.length ? `<div class="bgv-sec"><div class="bgv-k">${t('bg.files')}</div><div class="bgv-files">` + files.map((f) =>
+        `<span class="bgp ${f.mode}">${f.mode ? `<b>${t('bg.' + f.mode)}</b>` : ''}<span class="ipath" dir="ltr" title="${esc(f.path)}">${esc(f.path)}</span>${copy(f.path, 'info.copy')}</span>`).join('') + '</div></div>' : '') +
+      (e.event ? `<div class="bgv-sec"><div class="bgv-k">${t('bg.last_event')}</div><pre class="bgv-ev" dir="auto">${esc(e.event)}</pre></div>` : '') +
+      `<div class="bgv-sec"><div class="bgv-k">${t('bg.output')}<span class="bgv-om"></span></div><pre class="bgv-out" dir="ltr"></pre><div class="bgv-file"></div></div>`;
+    v.hidden = false;
+    this.paintBgHead();
+    this.pollBg();
+    this.bgT = setInterval(() => this.pollBg(), 2000);
+  }
+  paintBgHead() {
+    const e = this.bg.get(this.bgSel), v = this.q('.pbg-view');
+    if (!e || !v || v.hidden) return;
+    const st = bgState(e);
+    v.querySelector('.bgv-st').innerHTML = `<span class="ichip ${st === 'failed' ? 'bad' : st === 'running' ? 'live' : 'ok'}">${esc(t('bg.st.' + st))}</span>` +
+      (e.desc ? `<b dir="auto">${esc(e.desc)}</b>` : '');
+    v.querySelector('.bgv-meta').textContent = [e.ts ? t('bg.started', { when: hhmm(e.ts) }) : '', e.task].filter(Boolean).join(' · ');
+  }
+  stopBgPoll() { if (this.bgT) { clearInterval(this.bgT); this.bgT = null; } }
+  async pollBg() {
+    const tool = this.bgSel, key = this.key, e = this.bg.get(tool);
+    if (!e || !key || document.hidden) return;
+    const v = this.q('.pbg-view'), out = v.querySelector('.bgv-out'), om = v.querySelector('.bgv-om');
+    const say = (msg) => { out.textContent = msg; out.classList.add('none'); om.textContent = ''; };
+    if (!e.task) { say(t('bg.empty')); return; } // the call has not been answered yet
+    const r = serverOff || !SRC.ready ? { unsupported: true } : await SRC.task(key, e.task, this.bgSig);
+    if (this.bgSel !== tool || this.key !== key || !r) return;
+    if (r.unsupported) { say(t('bg.unsupported')); this.stopBgPoll(); return; }
+    if (!r.found) { say(t('bg.missing')); if (bgState(e) !== 'running') this.stopBgPoll(); return; }
+    if (!r.same) {
+      this.bgSig = r.sig;
+      this.bgAt = r.mtime;
+      this.bgInfo = { size: r.size, cut: r.cut, file: r.file };
+      const text = outText(r.text);
+      const exit = text.match(/\[exited with code (-?\d+)\]\s*$/);
+      if (exit && e.exit == null) { e.exit = +exit[1]; this.paintBgHead(); this.renderBg(); }
+      const stick = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+      out.classList.toggle('none', !text);
+      out.textContent = text || t('bg.empty');
+      if (stick) out.scrollTop = out.scrollHeight;
+      v.querySelector('.bgv-file').innerHTML = `<span class="ipath" dir="ltr" title="${esc(r.file)}">${esc(r.file)}</span>` +
+        `<button class="icopy" data-copy="${esc(r.file)}" title="${esc(t('info.copy'))}">${ICON.copy}</button>`;
+    }
+    if (this.bgInfo) {
+      const i = this.bgInfo;
+      om.textContent = [fmtBytes(i.size), this.bgAt ? t('bg.updated', { ago: ago(this.bgAt) }) : '', i.cut ? t('bg.tail', { n: fmtBytes(i.size - i.cut), total: fmtBytes(i.size) }) : ''].filter(Boolean).join(' · ');
+    }
+    if (bgState(e) !== 'running') this.stopBgPoll(); // finished: this was the last read
+  }
+  onBgView(e) {
+    const c = e.target.closest('[data-copy]');
+    if (c) { copyText(c.dataset.copy).then((ok) => toast(t(ok ? 'info.copied' : 'copy.failed'))); return; }
+    if (e.target.closest('[data-bgv="close"]')) { this.closeBg(); this.renderBg(true); }
+  }
+
   // ---------- info panel: model, duration, tokens, folder, activity ----------
   toggleInfo(force) {
     const box = this.q('.pinfo');
@@ -2035,7 +2218,7 @@ class Pane {
   }
   scheduleInfo() {
     if (this.infoT) return;
-    this.infoT = setTimeout(() => { this.infoT = null; this.renderInfo(); this.renderSummary(); }, 400);
+    this.infoT = setTimeout(() => { this.infoT = null; this.renderInfo(); this.renderSummary(); this.renderBg(); }, 400);
   }
   renderSummary() {
     // compact "model · duration · tokens" next to the title
@@ -2323,6 +2506,7 @@ class Pane {
     evs.forEach((ev) => {
       let el = null;
       trackStats(this.stats, ev);
+      this.trackBg(ev);
       if (ev.k === 'usage' || ev.k === 'ctx') return; // stats only, nothing to draw
       if (ev.k === 'pending') { this.waiting = ev.p; this.renderWait(wasBottom); return; }
       if (ev.k === 'title') {
@@ -2516,6 +2700,13 @@ function fmtDur(ms) {
   if (m < 60) return t('dur.m', { n: num(m) });
   return m % 60 ? t('dur.hm', { h: num(Math.floor(m / 60)), m: num(m % 60) }) : t('dur.h', { n: num(m / 60) });
 }
+// how a background task stands: its notification / TaskStop wins, then the exit line at the end of its output
+const bgState = (e) => (e.status ? ({ completed: 'done', failed: 'failed', killed: 'stopped', stopped: 'stopped' }[e.status] || 'done')
+  : e.exit != null ? (e.exit === 0 ? 'done' : 'failed') : 'running');
+// terminal output for a <pre>: colour codes dropped, a progress line rewritten with \r keeps its last state
+const outText = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, '').split('\n').map((l) => (l.includes('\r') ? l.split('\r').filter(Boolean).pop() || '' : l)).join('\n');
+const fmtBytes = (n) => (n >= 1048576 ? `${num(n / 1048576, { maximumFractionDigits: 1 })} MB` : n >= 1024 ? `${num(n / 1024, { maximumFractionDigits: 1 })} KB` : `${num(n)} B`);
+const cmdPaths = (cmd) => CCPreviewCore.cmdPaths(cmd);
 const shortModel = (m) => m.replace(/^claude-/, '');
 function statSummary(st) {
   const models = modelCounts(st), tk = tokenTotals(st);

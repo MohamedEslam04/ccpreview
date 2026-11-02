@@ -104,6 +104,13 @@
         options: (Array.isArray(q.options) ? q.options : []).slice(0, 12).map((o) => ({ label: String(o.label || ''), description: String(o.description || '') })),
       }));
     }
+    // a command left running in the background (Bash run_in_background, or a Monitor watcher): the full command
+    // for the Background bar, since `sum` keeps only the first line of the description
+    if ((b.name === 'Bash' && input.run_in_background === true) || b.name === 'Monitor') {
+      ev.bg = { cmd: clip(input.command || '', MAX_INPUT), desc: String(input.description || ''), monitor: b.name === 'Monitor' };
+    } else if ((b.name === 'TaskStop' || b.name === 'KillShell') && typeof (input.task_id || input.shell_id) === 'string') {
+      ev.stop = input.task_id || input.shell_id;
+    }
     if (!ev.diff && !ev.ask) ev.input = clip(JSON.stringify(input, null, 2), MAX_INPUT);
     return ev;
   }
@@ -150,7 +157,10 @@
               const text = clip(stripReminders(dropImageMarks(textOf(b.content))), MAX_RESULT);
               // AskUserQuestion: the chosen answers, when Claude Code records them
               const answers = tr && typeof tr === 'object' && tr.answers && typeof tr.answers === 'object' ? tr.answers : undefined;
-              out.push({ k: 'result', id: b.tool_use_id, err: !!b.is_error, agent, text, answers, images: images.length ? images : undefined });
+              // starting a background command / monitor answers with the id its output file is named after
+              const task = tr && typeof tr === 'object' ? tr.backgroundTaskId || tr.taskId : undefined;
+              out.push({ k: 'result', id: b.tool_use_id, err: !!b.is_error, agent, text, answers, images: images.length ? images : undefined,
+                task: typeof task === 'string' ? task : undefined });
             }
           }
         }
@@ -223,6 +233,27 @@
       text = text.slice((t || a)[0].length);
     }
     return { tasks, rest: text.trim() };
+  }
+
+  // The files a shell command touches, for the Background view: `> f`, `>> f`, `tee f` write; `< f` and the file
+  // arguments of tail / cat / grep & co read; any other path is only mentioned. A heuristic on the command text
+  // (no shell parsing): anything held in a variable is missed, /dev/* is left out.
+  const READ_VERBS = new Set(['tail', 'cat', 'head', 'less', 'more', 'grep', 'egrep', 'rg', 'wc', 'sort', 'jq', 'diff', 'source', 'sed', 'awk']);
+  const PATH_RE = /(>>?|&>>?|\btee(?:\s+-a)?\s+|<)?[ \t]*((?:~|\.{1,2})?\/[^\s"'`;|&<>()$,]+)/g;
+  function cmdPaths(cmd) {
+    const found = new Map();
+    for (const seg of String(cmd || '').split(/[|;&\n]+/)) {
+      const words = seg.trim().split(/\s+/).filter((w) => !/^\w+=/.test(w));
+      const reads = READ_VERBS.has((words[0] || '').replace(/^.*\//, ''));
+      for (const m of seg.matchAll(PATH_RE)) {
+        const path = m[2].replace(/[.:]+$/, '');
+        if (path.length < 2 || path.startsWith('/dev/')) continue;
+        const mode = m[1] ? (m[1] === '<' ? 'r' : 'w') : reads ? 'r' : '';
+        const old = found.get(path);
+        if (!old || (mode === 'w' && old !== 'w') || (mode === 'r' && !old)) found.set(path, mode);
+      }
+    }
+    return [...found].map(([path, mode]) => ({ path, mode }));
   }
 
   // ---------- session metadata (title, first prompt, cwd, turn state), updated incrementally ----------
@@ -391,6 +422,6 @@
 
   return {
     PER_PROJECT, EDGE_BYTES, META_CONCURRENCY, META_V, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
-    updateMeta, listSessions, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
+    updateMeta, listSessions, cmdPaths, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
   };
 });

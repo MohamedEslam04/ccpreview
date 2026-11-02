@@ -626,6 +626,42 @@
   .chip.pa .spin { width: 10px; height: 10px; border-width: 1.5px; border-top-color: var(--live); }
   .chip.pa.cur { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); color: var(--fg); }
   .chip.pa.parent { color: var(--accent); }
+  .pbg { flex: none; display: flex; gap: 6px; align-items: center; padding: 6px 20px; border-bottom: 1px solid var(--line-soft); background: var(--panel); overflow-x: auto; }
+  .pbg::-webkit-scrollbar { height: 6px; }
+  .pbg::-webkit-scrollbar-thumb { border-width: 1px; }
+  .chip.pa.bgc.running { border-color: color-mix(in oklch, var(--live) 45%, var(--line)); background: color-mix(in oklch, var(--live) 8%, var(--raised)); }
+  .chip.pa.bgc.running .spin { width: 10px; height: 10px; border-width: 1.5px; border-top-color: var(--live); }
+  .chip.pa.bgc.failed { color: var(--fg); } .chip.pa.bgc.failed .pa-st { color: var(--err); }
+  .chip.pa.bgc.stopped { color: var(--muted); } .chip.pa.bgc.stopped .pa-st .dot { background: var(--faint); }
+  .pbg-view { flex: none; max-height: 46vh; overflow-y: auto; border-bottom: 1px solid var(--line-soft); background: var(--panel); padding: 8px 20px 12px; font-size: 12.5px; display: flex; flex-direction: column; gap: 10px; }
+  .bgv-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bgv-st { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+  .bgv-st b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bgv-meta { flex: 1; min-width: 0; color: var(--faint); font-size: 11px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bgv-k { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; margin-bottom: 4px; }
+  .bgv-om { font-weight: 400; color: var(--faint); margin-inline-start: auto; }
+  .bgv-cmd, .bgv-out, .bgv-ev { margin: 0; padding: 8px 10px; border-radius: var(--r); background: var(--code); border: 1px solid var(--line-soft); font: 11.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; overflow: auto; }
+  .bgv-cmd { max-height: 120px; }
+  .bgv-ev { max-height: 90px; }
+  .bgv-out { max-height: 280px; min-height: 40px; }
+  .bgv-out.none { color: var(--faint); font-family: var(--ui); }
+  .bgv-files { display: flex; flex-direction: column; gap: 2px; }
+  .bgp { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bgp b { flex: none; min-width: 52px; font-size: 10.5px; font-weight: 700; color: var(--muted); }
+  .bgp.w b { color: var(--err); } .bgp.r b { color: var(--live); }
+  .bgv-file { display: flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--faint); min-width: 0; }
+  .pgrid[data-cols="3"] .pbg, .pgrid[data-cols="4"] .pbg, .pgrid[data-cols="3"] .pbg-view, .pgrid[data-cols="4"] .pbg-view { padding-inline: 12px; }
+  .pagents.open, .pbg.open { flex-wrap: wrap; align-content: flex-start; max-height: 34vh; overflow-x: hidden; overflow-y: auto; }
+  button.pa-count { border: 0; cursor: pointer; font-family: inherit; }
+  button.pa-count:hover { filter: brightness(.95); }
+  button.pa-count.on { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .sx-tools { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+  .sx-field { display: flex; align-items: center; height: 26px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--raised); }
+  .sx-field:focus-within { border-color: var(--accent); }
+  .sx-q { width: 120px; border: 0; background: none; outline: none; font-size: 12px; color: var(--fg); }
+  .sx-toggle { width: 26px; height: 26px; } .sx-toggle svg { width: 14px; height: 14px; } .sx-toggle.on { color: var(--accent); }
+  .chip.pa.more { color: var(--accent); border-style: dashed; }
+  .sx-none { color: var(--faint); font-size: 12px; padding: 0 6px; }
   .pa-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .vempty-in { color: var(--muted); font-size: 14px; padding: 24px 0; }
   .vempty-in .quick { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }

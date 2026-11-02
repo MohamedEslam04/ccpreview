@@ -57,7 +57,15 @@ test.before(async () => {
   session('git-repo', repo);
   session('git-plain', plain);
   session('git-gone', path.join(tmp, 'deleted'));
-  app = createServer({ projects, dataDir: path.join(tmp, 'data'), version: '9.9.9' });
+  // Claude Code keeps a background command's output at <tmp>/claude-<uid>/<project>/<session>/tasks/<task>.output
+  const taskTmp = path.join(tmp, 'tmproot');
+  const tasks = path.join(taskTmp, `claude-${process.getuid ? process.getuid() : 0}`, '-home-me-demo', 'abc-123', 'tasks');
+  fs.mkdirSync(tasks, { recursive: true });
+  fs.writeFileSync(path.join(tasks, 'bgone.output'), 'line one\nline two\n[exited with code 0]\n');
+  fs.writeFileSync(path.join(tasks, 'bgbig.output'), 'x'.repeat(70000) + 'THE END');
+  fs.writeFileSync(path.join(tmp, 'secret.txt'), 'top secret');
+  fs.symlinkSync(path.join(tmp, 'secret.txt'), path.join(tasks, 'bglink.output'));
+  app = createServer({ projects, dataDir: path.join(tmp, 'data'), version: '9.9.9', taskRoots: [taskTmp] });
   await new Promise((resolve) => app.listen(0, (p) => { port = p; resolve(); }));
 });
 
@@ -479,4 +487,32 @@ test('/api/usage is null until the tap records something, then only clamped numb
   const u = JSON.parse((await request('GET', '/api/usage')).text);
   assert.deepStrictEqual(u, { five_hour: { pct: 100, resets_at: 1800000000 }, seven_day: null, ts: 5 });
   fs.rmSync(path.join(data, 'usage.json'));
+});
+
+test('/api/task returns the output file of a background command', async () => {
+  const r = await request('GET', '/api/task?id=abc-123&task=bgone');
+  assert.strictEqual(r.status, 200);
+  const o = JSON.parse(r.text);
+  assert.strictEqual(o.found, true);
+  assert.strictEqual(o.text, 'line one\nline two\n[exited with code 0]\n');
+  assert.strictEqual(o.cut, 0);
+  assert.ok(o.sig && o.mtime > 0 && o.size === o.text.length);
+  assert.ok(o.file.endsWith('bgone.output'));
+});
+
+test('/api/task keeps only the tail of a big file, and says nothing new when the signature still matches', async () => {
+  const o = JSON.parse((await request('GET', '/api/task?id=abc-123&task=bgbig')).text);
+  assert.ok(o.text.endsWith('THE END'));
+  assert.ok(o.text.length <= 65536);
+  assert.strictEqual(o.cut, o.size - o.text.length);
+  const again = JSON.parse((await request('GET', `/api/task?id=abc-123&task=bgbig&since=${encodeURIComponent(o.sig)}`)).text);
+  assert.deepStrictEqual(again, { found: true, same: true });
+});
+
+test('/api/task only reads regular files named for a session and task', async () => {
+  assert.deepStrictEqual(JSON.parse((await request('GET', '/api/task?id=abc-123&task=nope')).text), { found: false });
+  assert.deepStrictEqual(JSON.parse((await request('GET', '/api/task?id=other-session&task=bgone')).text), { found: false });
+  assert.strictEqual((await request('GET', '/api/task?id=..&task=bgone')).status, 400);
+  assert.strictEqual((await request('GET', '/api/task?id=abc-123&task=..%2F..%2Fx')).status, 400);
+  assert.deepStrictEqual(JSON.parse((await request('GET', '/api/task?id=abc-123&task=bglink')).text), { found: false }, 'a symlink is not followed');
 });

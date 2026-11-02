@@ -11,6 +11,7 @@
  *   source.list({ all, more })  -> Promise<projects>
  *   source.open(ref, handlers)  -> { close() }   handlers: reset(), events(list), ready()
  *   source.git(ref)             -> Promise<git status of the session's folder | { unsupported: true } | null on failure>
+ *   source.task(ref, task, since) -> Promise<output file of a background command | { unsupported: true } | null on failure>
  */
 (function () {
   'use strict';
@@ -40,6 +41,15 @@
       const qs = `dir=${encodeURIComponent(ref.dir)}&id=${encodeURIComponent(ref.id)}` + (ref.agent ? `&agent=${encodeURIComponent(ref.agent)}` : '');
       try {
         const r = await fetch('/api/git?' + qs);
+        return r.ok ? await r.json() : null;
+      } catch (e) { return null; }
+    }
+    // What a background command (or monitor) has printed so far: the tail of its output file, found by the server
+    // from the session id and task id. `since` is the `sig` of the last answer; { found, same: true } means unchanged.
+    async task(ref, task, since) {
+      const qs = `id=${encodeURIComponent(ref.id)}&task=${encodeURIComponent(task)}` + (since ? `&since=${encodeURIComponent(since)}` : '');
+      try {
+        const r = await fetch('/api/task?' + qs);
         return r.ok ? await r.json() : null;
       } catch (e) { return null; }
     }
@@ -297,6 +307,8 @@
 
     // a web page cannot run git: that needs `npx ccpreview`
     async git() { return { unsupported: true }; }
+    // the output files live outside the projects folder, which a web page cannot read either
+    async task() { return { unsupported: true }; }
 
     // list scans never overlap (the meta cache is not re-entrant). `onProgress(projects)`: the list so far.
     list({ all, more, onProgress } = {}) {
