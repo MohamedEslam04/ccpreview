@@ -645,6 +645,11 @@
   .bgv-ev { max-height: 90px; }
   .bgv-out { max-height: 280px; min-height: 40px; }
   .bgv-out.none { color: var(--faint); font-family: var(--ui); }
+  .bgv-note { padding: 10px 12px; border-radius: var(--r); background: var(--hover); border: 1px solid var(--line-soft); line-height: 1.6; }
+  .bgv-note p { margin: 0 0 6px; }
+  .bgv-dir { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .bgv-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .bgv-actions small { color: var(--faint); }
   .bgv-files { display: flex; flex-direction: column; gap: 2px; }
   .bgp { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .bgp b { flex: none; min-width: 52px; font-size: 10.5px; font-weight: 700; color: var(--muted); }

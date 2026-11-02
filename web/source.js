@@ -11,7 +11,8 @@
  *   source.list({ all, more })  -> Promise<projects>
  *   source.open(ref, handlers)  -> { close() }   handlers: reset(), events(list), ready()
  *   source.git(ref)             -> Promise<git status of the session's folder | { unsupported: true } | null on failure>
- *   source.task(ref, task, since) -> Promise<output file of a background command | { unsupported: true } | null on failure>
+ *   source.task(ref, task, since) -> Promise<output file of a background command | { unsupported: true, need } | null on failure>
+ *                                 folder mode: needs the temp folder connected (tmpState, pickTmp, reconnectTmp)
  */
 (function () {
   'use strict';
@@ -100,7 +101,7 @@
   // ---------------------------------------------------------------- folder (File System Access API)
   // The picked folder's handle lives in its own database; the session-meta cache in another one, so adding
   // it never needs a version upgrade of the first (an upgrade waits for every other open tab to let go).
-  const DBS = { handles: ['ccpreview', 'handles'], meta: ['ccpreview-meta', 'meta'] };
+  const DBS = { handles: ['ccpreview', 'handles'], meta: ['ccpreview-meta', 'meta'], tmp: ['ccpreview-tmp', 'handles'] };
   function idb(which, mode, fn) {
     const [name, store] = DBS[which];
     return new Promise((resolve, reject) => {
@@ -123,7 +124,11 @@
   const forgetHandle = () => idb('handles', 'readwrite', (s) => s.delete('projects'));
   const saveMeta = (d) => idb('meta', 'readwrite', (s) => s.put(d, 'projects'));
   const loadMeta = () => idb('meta', 'readonly', (s) => s.get('projects')).catch(() => null);
-  const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).catch(() => {});
+  // the temp folder holding background-command output (see FolderSource.task), remembered like the projects folder
+const saveTmp = (h) => idb('tmp', 'readwrite', (s) => s.put(h, 'tmp'));
+const loadTmp = () => idb('tmp', 'readonly', (s) => s.get('tmp')).catch(() => null);
+const forgetTmp = () => idb('tmp', 'readwrite', (s) => s.delete('tmp')).catch(() => {});
+const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).catch(() => {});
 
   async function* dirEntries(dirHandle) {
     for await (const [name, handle] of dirHandle.entries()) yield [name, handle];
@@ -168,9 +173,17 @@
       const h = await loadHandle();
       if (!h) return 'needs-folder';
       const perm = await h.queryPermission({ mode: 'read' });
+      this.loadTmpHandle(); // not awaited: only the Background view needs it
       if (perm === 'granted') { this.use(h); await this.restoreMeta(); return 'ready'; }
       this.pending = h;
       return 'needs-permission';
+    }
+    async loadTmpHandle() {
+      const h = await loadTmp();
+      if (!h) return;
+      try {
+        if ((await h.queryPermission({ mode: 'read' })) === 'granted') this.tmpRoot = h; else this.tmpPending = h;
+      } catch (e) { /* handle no longer valid */ }
     }
     use(h) {
       this.root = h;
@@ -206,6 +219,7 @@
     async disconnect() {
       await forgetHandle();
       await forgetMeta();
+      await this.forgetTmpFolder();
       this.root = null;
       this.pending = null;
       this.ready = false;
@@ -307,8 +321,46 @@
 
     // a web page cannot run git: that needs `npx ccpreview`
     async git() { return { unsupported: true }; }
-    // the output files live outside the projects folder, which a web page cannot read either
-    async task() { return { unsupported: true }; }
+
+    // Background-command output lives in the temp folder (<tmp>/claude-<uid>/<project>/<session>/tasks), outside
+    // the projects folder. The page can read it once the user connects that folder, read-only, like the projects one.
+    get tmpState() { return this.tmpRoot ? 'ready' : this.tmpPending ? 'needs-permission' : 'needs-folder'; }
+    async pickTmp() {
+      const h = await window.showDirectoryPicker({ id: 'ccpreview-tmp', mode: 'read' });
+      await saveTmp(h);
+      this.tmpRoot = h;
+      this.tmpPending = null;
+      this.tasksDirs = new Map();
+    }
+    async reconnectTmp() {
+      if (!this.tmpPending) return this.pickTmp();
+      if ((await this.tmpPending.requestPermission({ mode: 'read' })) !== 'granted') throw new Error('permission-denied');
+      this.tmpRoot = this.tmpPending;
+      this.tmpPending = null;
+    }
+    async forgetTmpFolder() { await forgetTmp(); this.tmpRoot = this.tmpPending = null; this.tasksDirs = new Map(); }
+    // same answer as the server's /api/task; { unsupported, need } until the temp folder is connected
+    async task(ref, task, since) {
+      if (!this.tmpRoot) return { unsupported: true, need: this.tmpState };
+      try {
+        const dirs = this.tasksDirs || (this.tasksDirs = new Map());
+        let dir = dirs.get(ref.id);
+        if (!dir) { dir = await core.locateTasks(this.tmpRoot, ref.id); if (dir) dirs.set(ref.id, dir); }
+        if (!dir) return { found: false };
+        const f = await (await dir.getFileHandle(task + '.output')).getFile();
+        const sig = `${f.size}:${f.lastModified}`;
+        if (since === sig) return { found: true, same: true };
+        const len = Math.min(f.size, 64 * 1024);
+        const buf = new Uint8Array(await f.slice(f.size - len).arrayBuffer());
+        let start = 0;
+        if (f.size > len) while (start < buf.length && (buf[start] & 0xc0) === 0x80) start++; // began inside a character
+        const text = new TextDecoder().decode(buf.subarray(start));
+        return { found: true, file: `${this.tmpRoot.name}/…/${ref.id}/tasks/${task}.output`, size: f.size, mtime: f.lastModified, sig, cut: f.size - (buf.length - start), text };
+      } catch (e) {
+        this.tasksDirs && this.tasksDirs.delete(ref.id);
+        return e && e.name === 'NotFoundError' ? { found: false } : null; // other errors: try again next time
+      }
+    }
 
     // list scans never overlap (the meta cache is not re-entrant). `onProgress(projects)`: the list so far.
     list({ all, more, onProgress } = {}) {

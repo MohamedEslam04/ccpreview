@@ -2095,7 +2095,7 @@ class Pane {
   // is the tail of the file Claude Code writes it to, which the server reads (see /api/task).
   trackBg(ev) {
     if (ev.k === 'tool' && ev.bg) this.bg.set(ev.id, { tool: ev.id, ...ev.bg, ts: ev.ts, task: '', status: '', exit: null, event: '' });
-    else if (ev.k === 'result' && ev.task) { const e = this.bg.get(ev.id); if (e) e.task = ev.task; }
+    else if (ev.k === 'result' && ev.task) { const e = this.bg.get(ev.id); if (e) { e.task = ev.task; e.out = ev.out || ''; } }
     else if (ev.k === 'task' && ev.taskId) {
       const e = this.bgOf(ev.taskId);
       if (e) { if (ev.status) { e.status = ev.status; e.endTs = ev.ts; } if (ev.detail) e.event = ev.detail; }
@@ -2155,7 +2155,7 @@ class Pane {
       (files.length ? `<div class="bgv-sec"><div class="bgv-k">${t('bg.files')}</div><div class="bgv-files">` + files.map((f) =>
         `<span class="bgp ${f.mode}">${f.mode ? `<b>${t('bg.' + f.mode)}</b>` : ''}<span class="ipath" dir="ltr" title="${esc(f.path)}">${esc(f.path)}</span>${copy(f.path, 'info.copy')}</span>`).join('') + '</div></div>' : '') +
       (e.event ? `<div class="bgv-sec"><div class="bgv-k">${t('bg.last_event')}</div><pre class="bgv-ev" dir="auto">${esc(e.event)}</pre></div>` : '') +
-      `<div class="bgv-sec"><div class="bgv-k">${t('bg.output')}<span class="bgv-om"></span></div><pre class="bgv-out" dir="ltr"></pre><div class="bgv-file"></div></div>`;
+      `<div class="bgv-sec"><div class="bgv-k">${t('bg.output')}<span class="bgv-om"></span></div><pre class="bgv-out" dir="ltr"></pre><div class="bgv-note" hidden></div><div class="bgv-file"></div></div>`;
     v.hidden = false;
     this.paintBgHead();
     this.pollBg();
@@ -2169,16 +2169,42 @@ class Pane {
       (e.desc ? `<b dir="auto">${esc(e.desc)}</b>` : '');
     v.querySelector('.bgv-meta').textContent = [e.ts ? t('bg.started', { when: hhmm(e.ts) }) : '', e.task].filter(Boolean).join(' · ');
   }
+  // folder mode: the output files are in the temp folder, which the page can read once the user connects it
+  connectHint(e, need) {
+    const v = this.q('.pbg-view');
+    const dir = ((e.out || [...this.bg.values()].map((x) => x.out).find(Boolean) || '').match(/^(.*?[\\/]claude-[^\\/]+)[\\/]/) || [])[1] || '/tmp/claude-<uid>';
+    v.querySelector('.bgv-out').hidden = true;
+    v.querySelector('.bgv-om').textContent = '';
+    v.querySelector('.bgv-file').innerHTML = '';
+    const n = v.querySelector('.bgv-note');
+    n.hidden = false;
+    n.innerHTML = `<p dir="auto">${esc(t(need === 'needs-permission' ? 'bg.connect_again' : 'bg.connect_text'))}</p>` +
+      `<p class="bgv-dir"><span class="ipath" dir="ltr" title="${esc(dir)}">${esc(dir)}</span><button class="icopy" data-copy="${esc(dir)}" title="${esc(t('info.copy'))}">${ICON.copy}</button></p>` +
+      `<div class="bgv-actions"><button class="btn primary" data-bgv="connect">${esc(t(need === 'needs-permission' ? 'bg.connect_allow' : 'bg.connect_pick'))}</button>` +
+      `<small dir="auto">${esc(t('bg.connect_note'))}</small></div>`;
+  }
+  async connectTmp() {
+    try {
+      await (SRC.tmpState === 'needs-permission' ? SRC.reconnectTmp() : SRC.pickTmp());
+    } catch (err) {
+      if (err && err.name !== 'AbortError') toast(t('bg.connect_failed'));
+      return;
+    }
+    if (this.bgSel) { this.bgSig = ''; this.pollBg(); this.stopBgPoll(); this.bgT = setInterval(() => this.pollBg(), 2000); }
+  }
   stopBgPoll() { if (this.bgT) { clearInterval(this.bgT); this.bgT = null; } }
   async pollBg() {
     const tool = this.bgSel, key = this.key, e = this.bg.get(tool);
     if (!e || !key || document.hidden) return;
     const v = this.q('.pbg-view'), out = v.querySelector('.bgv-out'), om = v.querySelector('.bgv-om');
-    const say = (msg) => { out.textContent = msg; out.classList.add('none'); om.textContent = ''; };
+    const note = v.querySelector('.bgv-note');
+    const say = (msg) => { out.hidden = false; note.hidden = true; out.textContent = msg; out.classList.add('none'); om.textContent = ''; };
     if (!e.task) { say(t('bg.empty')); return; } // the call has not been answered yet
     const r = serverOff || !SRC.ready ? { unsupported: true } : await SRC.task(key, e.task, this.bgSig);
     if (this.bgSel !== tool || this.key !== key || !r) return;
-    if (r.unsupported) { say(t('bg.unsupported')); this.stopBgPoll(); return; }
+    if (r.unsupported) { this.stopBgPoll(); if (r.need) this.connectHint(e, r.need); else say(t('bg.unsupported')); return; }
+    out.hidden = false;
+    note.hidden = true;
     if (!r.found) { say(t('bg.missing')); if (bgState(e) !== 'running') this.stopBgPoll(); return; }
     if (!r.same) {
       this.bgSig = r.sig;
@@ -2204,6 +2230,7 @@ class Pane {
     const c = e.target.closest('[data-copy]');
     if (c) { copyText(c.dataset.copy).then((ok) => toast(t(ok ? 'info.copied' : 'copy.failed'))); return; }
     if (e.target.closest('[data-bgv="close"]')) { this.closeBg(); this.renderBg(true); }
+    else if (e.target.closest('[data-bgv="connect"]')) this.connectTmp();
   }
 
   // ---------- info panel: model, duration, tokens, folder, activity ----------

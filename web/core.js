@@ -159,8 +159,9 @@
               const answers = tr && typeof tr === 'object' && tr.answers && typeof tr.answers === 'object' ? tr.answers : undefined;
               // starting a background command / monitor answers with the id its output file is named after
               const task = tr && typeof tr === 'object' ? tr.backgroundTaskId || tr.taskId : undefined;
+              const outFile = typeof task === 'string' ? (text.match(/Output is being written to: (\S+?\.output)/) || [])[1] : undefined;
               out.push({ k: 'result', id: b.tool_use_id, err: !!b.is_error, agent, text, answers, images: images.length ? images : undefined,
-                task: typeof task === 'string' ? task : undefined });
+                task: typeof task === 'string' ? task : undefined, out: outFile });
             }
           }
         }
@@ -254,6 +255,23 @@
       }
     }
     return [...found].map(([path, mode]) => ({ path, mode }));
+  }
+
+  // Where a session's background-command output files are, inside a folder the user connected: that folder may be
+  // /tmp, /tmp/claude-<uid> or one project's folder in there (all of them hold <session>/tasks). `root` is a
+  // FileSystemDirectoryHandle-like object (getDirectoryHandle, entries, name). Returns the tasks folder or null.
+  async function locateTasks(root, sid) {
+    const sub = async (h, name) => { try { return await h.getDirectoryHandle(name); } catch (e) { return null; } };
+    const tasksOf = async (h) => { const s = await sub(h, sid); return s ? sub(s, 'tasks') : null; };
+    async function* dirs(h) { for await (const [n, x] of h.entries()) if (x.kind === 'directory') yield [n, x]; }
+    let d = await tasksOf(root);
+    if (d) return d;
+    const inUid = /^claude-/.test(root.name || '');
+    for await (const [n, x] of dirs(root)) {
+      if (inUid || !/^claude-/.test(n)) { d = inUid ? await tasksOf(x) : null; if (d) return d; continue; }
+      for await (const [, p] of dirs(x)) { d = await tasksOf(p); if (d) return d; }
+    }
+    return null;
   }
 
   // ---------- session metadata (title, first prompt, cwd, turn state), updated incrementally ----------
@@ -422,6 +440,6 @@
 
   return {
     PER_PROJECT, EDGE_BYTES, META_CONCURRENCY, META_V, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
-    updateMeta, listSessions, cmdPaths, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
+    updateMeta, listSessions, cmdPaths, locateTasks, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
   };
 });

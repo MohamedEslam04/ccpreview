@@ -612,3 +612,29 @@ test('cmdPaths: a path that is only mentioned has no mode; repeats collapse, wri
   assert.deepStrictEqual(core.cmdPaths('cat /tmp/z; echo hi > /tmp/z'), [{ path: '/tmp/z', mode: 'w' }]);
   assert.deepStrictEqual(core.cmdPaths(''), []);
 });
+
+test('the result of a background start also carries the output file path (the folder to connect on the hosted page)', () => {
+  const text = 'Command running in background with ID: bqwy5npw2. Output is being written to: /tmp/claude-1000/-data-x/sess-1/tasks/bqwy5npw2.output. You will be notified when it completes.';
+  const [r] = core.convert(toolResult('tu1', text, { backgroundTaskId: 'bqwy5npw2' }), false);
+  assert.strictEqual(r.out, '/tmp/claude-1000/-data-x/sess-1/tasks/bqwy5npw2.output');
+  assert.strictEqual(core.convert(toolResult('tu3', 'Monitor started (task b7)', { taskId: 'b7' }), false)[0].out, undefined);
+});
+
+// a folder handle that behaves like the File System Access API's, built from nested objects
+const fakeDir = (name, kids = {}) => ({
+  kind: 'directory', name,
+  async getDirectoryHandle(n) { if (kids[n] && kids[n].kind === 'directory') return kids[n]; throw new Error('NotFoundError'); },
+  async *entries() { for (const [n, h] of Object.entries(kids)) yield [n, h]; },
+});
+const file = { kind: 'file' };
+
+test('locateTasks finds <session>/tasks from /tmp, from claude-<uid>, from the project folder', async () => {
+  const tasks = fakeDir('tasks', { 'a.output': file });
+  const proj = fakeDir('-data-x', { 'sess-1': fakeDir('sess-1', { tasks }) });
+  const uidDir = fakeDir('claude-1000', { '-data-x': proj, '-other': fakeDir('-other') });
+  const tmp = fakeDir('tmp', { 'claude-1000': uidDir, 'unrelated': fakeDir('unrelated') });
+  assert.strictEqual(await core.locateTasks(tmp, 'sess-1'), tasks);
+  assert.strictEqual(await core.locateTasks(uidDir, 'sess-1'), tasks);
+  assert.strictEqual(await core.locateTasks(proj, 'sess-1'), tasks);
+  assert.strictEqual(await core.locateTasks(tmp, 'nope'), null);
+});
