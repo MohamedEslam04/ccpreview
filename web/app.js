@@ -2711,6 +2711,20 @@ document.addEventListener('dragend', () => {
   clearDrop();
 });
 
+// A plain mouse wheel over a strip that only scrolls sideways (the subagent chips, the tab bar) scrolls it
+// sideways, so Shift is not needed. A strip with nothing to scroll leaves the wheel to the page.
+document.addEventListener('wheel', (e) => {
+  const strip = e.target.closest && e.target.closest('.pagents, #tabbar');
+  if (!strip || e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || strip.scrollWidth <= strip.clientWidth) return;
+  const rtl = getComputedStyle(strip).direction === 'rtl';
+  const d = (e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY) * (rtl ? -1 : 1); // in RTL the end of the strip is at scrollLeft <= 0
+  const max = strip.scrollWidth - strip.clientWidth;
+  const next = Math.max(rtl ? -max : 0, Math.min(rtl ? 0 : max, strip.scrollLeft + d));
+  if (next === strip.scrollLeft) return; // already at the end: let the page scroll on
+  e.preventDefault();
+  strip.scrollLeft = next;
+}, { passive: false });
+
 // ---------- tabs: each one is its own split layout (usually one session at full size) ----------
 const tabLead = (tb, i) => {
   const ps = i === curTab ? panes : tb.panes;
@@ -2780,6 +2794,7 @@ function focusPane(p) {
   const i = tabs.findIndex((tb, j) => (j === curTab ? panes : tb.panes).includes(p));
   if (i >= 0) selectTab(i);
   setActive(p);
+  p.el.scrollIntoView({ block: 'nearest' }); // a column on a row below the fold
 }
 const sameKey = (p, k) => p.key && p.key.dir === k.dir && p.key.id === k.id && (p.key.agent || '') === (k.agent || '');
 let dragTab = -1;
@@ -2853,11 +2868,11 @@ function closePane(p) {
 }
 // open a session/subagent in the active pane, or in a new pane next to it
 function openIn(target, opts = {}) {
-  if (opts.newTab && !opts.restoring) { addTab(target); return; }
-  if (!opts.newPane && !opts.restoring) { // already open in another tab: go there instead of opening it twice
-    const there = allPanes().find((x) => sameKey(x, target) && !panes.includes(x));
+  if (!opts.restoring) { // a session is open once: if it already is, in any tab or column, go there
+    const there = allPanes().find((x) => sameKey(x, target));
     if (there) { focusPane(there); return; }
   }
+  if (opts.newTab && !opts.restoring) { addTab(target); return; }
   let p = activePane;
   if (!p || (opts.newPane && p.key)) p = addPane();
   p.open(target, opts.restoring);
@@ -3344,13 +3359,22 @@ function restorePanes(restoring) {
 function restoreTabs(restoring) {
   tabs.forEach((tb) => { tb.panes.forEach((p) => p.destroy()); tb.grid.remove(); });
   tabs = [];
-  let saved = (ui.vtabs || []).filter((tb) => tb && Array.isArray(tb.panes) && tb.panes.length);
-  let cur = Math.max(0, Math.min(ui.vtab || 0, (ui.vtabs || []).length - 1));
-  // empty tabs were not kept: move the position of the shown one down by the empty ones before it
-  cur = Math.max(0, Math.min(saved.length - 1, cur - (ui.vtabs || []).slice(0, cur).filter((tb) => !tb || !tb.panes || !tb.panes.length).length));
-  saved = saved.slice(0, MAX_TABS);
-  if (!saved.length) { saved = [{ panes: ui.panes || [], active: ui.activePane || 0 }]; cur = 0; }
-  else saved[cur] = { panes: ui.panes && ui.panes.length ? ui.panes : saved[cur].panes, active: ui.activePane || 0 };
+  let saved = (ui.vtabs || []).slice(0, MAX_TABS).map((tb) => (tb && Array.isArray(tb.panes) ? tb : { panes: [], active: 0 }));
+  let cur = Math.max(0, Math.min(ui.vtab || 0, saved.length - 1));
+  if (!saved.length) saved = [{ panes: ui.panes || [], active: ui.activePane || 0 }];
+  else if (ui.panes && ui.panes.length) saved[cur] = { panes: ui.panes, active: ui.activePane || 0 }; // the URL is the tab being shown
+  // a session is open once: drop copies left by older versions (the same session in several tabs or columns),
+  // keeping the ones in the tab being shown; tabs left empty go
+  const seen = new Set();
+  const uniq = saved.map(() => []);
+  [cur, ...saved.map((_, i) => i).filter((i) => i !== cur)].forEach((i) => {
+    uniq[i] = saved[i].panes.filter((k) => k && k.dir && k.id && !seen.has(keyOf(k)) && seen.add(keyOf(k)));
+  });
+  const keep = saved.map((_, i) => i).filter((i) => uniq[i].length);
+  const was = keep.map((i) => ({ panes: uniq[i], active: Math.min(saved[i].active || 0, uniq[i].length - 1) }));
+  const wasCur = keep.indexOf(cur);
+  saved = was.length ? was : [{ panes: [], active: 0 }];
+  cur = Math.max(0, wasCur);
   saved.forEach((sv, i) => {
     tabs.push(newTabObj());
     bindTab(i);
