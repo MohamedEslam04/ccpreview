@@ -2336,6 +2336,12 @@ class Pane {
         el = document.createElement(ev.detail ? 'details' : 'div');
         el.className = 'task ' + ({ completed: 'ok', failed: 'bad', killed: 'bad', stopped: 'stop' }[ev.status] || '');
         el.innerHTML = ev.detail ? `<summary>${head}</summary><div class="task-body" dir="auto">${md(ev.detail)}</div>` : head;
+      } else if (ev.k === 'agentmsg') {
+        // a subagent's final report / a peer session's message: one muted line, the text folded under it
+        const label = t(ev.sub ? 'msg.subagent_report' : 'msg.agent_message');
+        el = document.createElement('details');
+        el.className = 'task agentmsg';
+        el.innerHTML = `<summary><span class="task-dot"></span><span class="task-sum" dir="auto">${esc(label)}${ev.from ? ` <code>${esc(ev.from.slice(0, 8))}</code>` : ''}</span><span class="task-time">${hhmm(ev.ts)}</span></summary><div class="task-body" dir="auto">${md(ev.detail)}</div>`;
       } else if (ev.k === 'note') {
         el = document.createElement('div');
         el.className = 'note';

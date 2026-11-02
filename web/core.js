@@ -197,12 +197,30 @@
   // mentions the tag stays the user's text, and an unclosed block isn't guessed at.
   const TASK_HEAD = /^\s*<task-notification>([\s\S]*?)<\/task-notification>/;
   const tagIn = (body, tag) => { const m = body.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)); return m ? m[1].trim() : ''; };
+  // A subagent's final report (or a message from another Claude session) arrives as an <agent-message> block,
+  // not as something the user typed. The harness indents every line of the report and puts a warning frame in
+  // front of it; the terminal shows it as a short line, so do we: the frame is dropped, the report de-indented.
+  const AGENT_HEAD = /^\s*(?:Another Claude session sent a message:\s*)?<agent-message(?:\s+from="([^"]*)")?>([\s\S]*?)<\/agent-message>/;
+  const HAND_BACK = /^\s*\[Subagent hand-back\][^\n]*?The report follows:[ \t]*\n?/;
+  function agentMessage(m, ts) {
+    let body = m[2];
+    const sub = HAND_BACK.test(body);
+    body = body.replace(HAND_BACK, '').replace(/^ {2}/gm, '').trim();
+    return { k: 'agentmsg', ts, from: m[1] || '', sub, detail: clip(body, MAX_RESULT * 4) };
+  }
   function takeTasks(text, ts) {
     const tasks = [];
-    for (let m; (m = TASK_HEAD.exec(text)); text = text.slice(m[0].length)) {
-      const b = m[1];
-      tasks.push({ k: 'task', ts, status: tagIn(b, 'status'), summary: tagIn(b, 'summary'), taskId: tagIn(b, 'task-id'),
-        detail: clip(tagIn(b, 'result') || tagIn(b, 'event'), MAX_RESULT) });
+    for (;;) {
+      const t = TASK_HEAD.exec(text);
+      const a = t ? null : AGENT_HEAD.exec(text);
+      if (!t && !a) break;
+      if (a) tasks.push(agentMessage(a, ts));
+      else {
+        const b = t[1];
+        tasks.push({ k: 'task', ts, status: tagIn(b, 'status'), summary: tagIn(b, 'summary'), taskId: tagIn(b, 'task-id'),
+          detail: clip(tagIn(b, 'result') || tagIn(b, 'event'), MAX_RESULT) });
+      }
+      text = text.slice((t || a)[0].length);
     }
     return { tasks, rest: text.trim() };
   }

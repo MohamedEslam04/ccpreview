@@ -534,3 +534,31 @@ test('a prompt that only mentions <task-notification> is still the user\'s promp
   // an unclosed block is not guessed at either
   assert.ok(!core.convert(queued('<task-notification><summary>half'), false).some((e) => e.k === 'task'));
 });
+
+// ---------- <agent-message>: a subagent's final report is not something the user typed ----------
+
+const FRAME = '[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT a message from the user. The report follows:';
+const handBack = (body) => `<agent-message from="a9796679b96f972a1">\n${FRAME}\n${body.split('\n').map((l) => '  ' + l).join('\n')}\n</agent-message>`;
+
+test('subagent hand-back sent while Claude works: one agentmsg event, frame dropped, report de-indented', () => {
+  const [ev, ...more] = core.convert(queued(handBack('## Task\nFix it\n\n- a\n- b')), false);
+  assert.strictEqual(more.length, 0);
+  assert.deepStrictEqual(ev, { k: 'agentmsg', ts: 't9', from: 'a9796679b96f972a1', sub: true, detail: '## Task\nFix it\n\n- a\n- b' });
+});
+
+test('agent message as a user line, with the "Another Claude session" lead-in, is the same event', () => {
+  const ev = core.convert(userMsg('Another Claude session sent a message:\n' + handBack('done')), false);
+  assert.deepStrictEqual(ev.map((e) => [e.k, e.sub, e.detail]), [['agentmsg', true, 'done']]);
+});
+
+test('a plain peer message is an agentmsg without the subagent flag; text after it stays the user\'s', () => {
+  const ev = core.convert(queued('<agent-message from="peer1">\nhello there\n</agent-message>\nand fix the footer'), false);
+  assert.deepStrictEqual(ev.map((e) => [e.k, e.sub || false]), [['agentmsg', false], ['user', false]]);
+  assert.strictEqual(ev[0].detail, 'hello there');
+  assert.strictEqual(ev[1].text, 'and fix the footer');
+});
+
+test('a prompt that only mentions <agent-message> stays the user\'s prompt', () => {
+  const [ev] = core.convert(userMsg('what is an <agent-message> block?'), false);
+  assert.deepStrictEqual([ev.k, ev.text], ['user', 'what is an <agent-message> block?']);
+});
