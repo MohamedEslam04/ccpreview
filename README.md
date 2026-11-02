@@ -44,6 +44,12 @@ npx ccpreview
 ### Subagents
 - A subagents bar per session: each agent's task, type and state (running, done, stopped), and one click to open its own transcript.
 - Subagents also appear under their session in the sidebar.
+- With many subagents the bar shows the first six and a "+N more" button. Open it to wrap them all over several rows, filter by state (running, done, stopped) or search by name.
+
+### Background commands and watchers
+- A Background bar per session lists every command Claude left running (`run_in_background` Bash calls and Monitor watchers) with its state: running, done, failed or stopped.
+- Click one for the full command, the files it writes and reads (taken from the command text, so a path held in a variable is missed), and the live tail of its output (the last 64 KB, refreshed every two seconds while it runs).
+- The output comes from the file Claude Code writes under your temp folder (`claude-<uid>/<project>/<session>/tasks/<task>.output`), so it needs `npx ccpreview`. On the hosted page you see the commands and their state, without the output. Long lists fold and filter like the subagents bar.
 
 ### Session info
 Press `i` or the info button for a panel with:
@@ -103,6 +109,7 @@ Special setups:
 - Every request must carry a `Host` header of `127.0.0.1:<port>` or `localhost:<port>`. This blocks DNS rebinding.
 - No CORS headers are sent, so other websites cannot read responses. Writes (`PUT /api/pages`, `POST /api/shutdown`) also require a same-origin `Origin` header.
 - Session ids and folder names are validated against a strict pattern, so `..` and hidden folders are rejected. Static files come from a fixed list.
+- `GET /api/task` (a background command's output) never takes a path from the page: the server finds the file from the session id and task id, reads only regular files (symlinks are refused), and sends at most the last 64 KB.
 - Nothing is uploaded. There is no analytics, no telemetry and no external request, in either mode.
 - Folder mode requests read-only access. The hosted page never writes to your folder.
 - Notes are stored in `~/.ccpreview/pages.json` in server mode (with daily backups in `~/.ccpreview/backups`, the last 14 kept) and in the browser's `localStorage` in folder mode.
@@ -219,7 +226,8 @@ ccpreview بيوريك Claude Code بيعمل إيه دلوقتي، في الم�
 
 - **متابعة لحظة بلحظة:** كل السيشنز متقسمة حسب المشروع أو اليوم، فلاتر (شغالة، مستنياك، مفتوحة، متثبتة، تاريخ)، لحد 12 سيشن جنب بعض (تسحب هيدر السيشن وتسيبه جنب سيشن تانية أو فوقها أو تحتها زي VS Code، ولو مش واسعين بيسكرول لتحت)، وكل سيشن ممكن تفتحها في تابة لوحدها بحجمها الكامل (زرار التابة على الصف أو Shift+كليك)، وإشعار لما سيشن تخلص أو تستناك ترد.
 - **تقرا اللي حصل:** الرسايل بالـ markdown والجداول، الأوامر متجمعة في كل دور، الـ diffs بتاعة الملفات، الخطة وقايمة المهام متثبتين فوق، كروت أسئلة `AskUserQuestion` والإجابة اللي اخترتها، وبحث جوه السيشن بيفهم العربي.
-- **الـ subagents:** شريط لكل سيشن فيه كل agent ومهمته وحالته، وتفتح الـ transcript بتاعه بضغطة.
+- **الـ subagents:** شريط لكل سيشن فيه كل agent ومهمته وحالته، وتفتح الـ transcript بتاعه بضغطة. لو كتير بيعرض أول ستة و"+N كمان"، وتفتحه تشوفهم كلهم على كذا سطر وتفلتر بالحالة أو تدوّر بالاسم.
+- **الخلفية (background):** شريط بالكوماندات والـ watchers اللي Claude سابها شغالة (`run_in_background` و`Monitor`) وحالة كل واحدة. تدوس على واحدة تشوف الكوماند كامل، والملفات اللي بتكتبها وتقراها (تخمين من نص الكوماند)، وآخر 64KB من الـ output لايف. الـ output محتاج `npx ccpreview`، وفي الصفحة المستضافة بتشوف الكوماندات وحالتها من غير output.
 - **معلومات السيشن (زرار `i`):** الكونتكست دلوقتي ونسبته من الشباك وآخر ضغط، المود والإيفورت، التوكنز المتحاسبة، وحالة git (الفرع، الـ commits اللي لسه ما اترفعتش، الملفات المتعدّلة) مع `npx ccpreview`.
 - **الصور:** عارض فيه زوم وسحب وخصائص الصورة وشريط مصغّرات بمعاينة لما تقف عليها.
 - **عربي صح:** الواجهة عربي وإنجليزي، وكل سطر بياخد اتجاه اللغة الغالبة فيه، فاللي مكتوب إنجليزي بيتقري من الشمال واللي عربي من اليمين. فاتح وغامق.
@@ -243,4 +251,4 @@ ccpreview is an independent project and is not affiliated with or endorsed by An
 
 ---
 
-Docs synced to commit 311a0f6 ("fix(viewer): show a waiting question once when the transcript already has it", 2026-11-01).
+Docs synced to commit 6b262f7 ("feat(viewer): show background commands and watchers with live output; filter long chip strips", 2026-11-02).
