@@ -26,7 +26,7 @@ npx ccpreview
 ### Follow sessions live
 - Sessions update as Claude Code writes them, with a "Live" marker and a count of new messages when you're scrolled up.
 - Session list grouped by project or by day, with filters: live, waiting for you, open, pinned, a date range and a title search.
-- Up to 12 sessions side by side: extra ones wrap into new rows and the view scrolls down. Drag a pane's header to reorder.
+- Up to 12 sessions side by side: stack panes in a column and the view scrolls down when they don't fit. Drag a pane's header to move it beside, above or below another one (like VS Code).
 - Tabs: open a session in its own tab at full size (the tab button on a row, or Shift+click). Each tab keeps its own layout, tabs can be dragged to reorder, and they come back after a reload.
 - Desktop notifications when a session finishes or is waiting for your answer.
 
@@ -217,7 +217,7 @@ ccpreview بيوريك Claude Code بيعمل إيه دلوقتي، في الم�
 
 [شوف الفيديو (٣ دقايق)](https://mohamedeslam04.github.io/ccpreview/demo.mp4): Claude Code في التيرمينال وccpreview جنبه في المتصفح، وبرومبت عربي بيطلع مكسّر في التيرمينال ومقروء صح في ccpreview.
 
-- **متابعة لحظة بلحظة:** كل السيشنز متقسمة حسب المشروع أو اليوم، فلاتر (شغالة، مستنياك، مفتوحة، متثبتة، تاريخ)، لحد 12 سيشن جنب بعض (الزيادة بتنزل في صف جديد وبتسكرول لتحت، وتسحب هيدر السيشن عشان ترتبهم)، وكل سيشن ممكن تفتحها في تابة لوحدها بحجمها الكامل (زرار التابة على الصف أو Shift+كليك)، وإشعار لما سيشن تخلص أو تستناك ترد.
+- **متابعة لحظة بلحظة:** كل السيشنز متقسمة حسب المشروع أو اليوم، فلاتر (شغالة، مستنياك، مفتوحة، متثبتة، تاريخ)، لحد 12 سيشن جنب بعض (تسحب هيدر السيشن وتسيبه جنب سيشن تانية أو فوقها أو تحتها زي VS Code، ولو مش واسعين بيسكرول لتحت)، وكل سيشن ممكن تفتحها في تابة لوحدها بحجمها الكامل (زرار التابة على الصف أو Shift+كليك)، وإشعار لما سيشن تخلص أو تستناك ترد.
 - **تقرا اللي حصل:** الرسايل بالـ markdown والجداول، الأوامر متجمعة في كل دور، الـ diffs بتاعة الملفات، الخطة وقايمة المهام متثبتين فوق، كروت أسئلة `AskUserQuestion` والإجابة اللي اخترتها، وبحث جوه السيشن بيفهم العربي.
 - **الـ subagents:** شريط لكل سيشن فيه كل agent ومهمته وحالته، وتفتح الـ transcript بتاعه بضغطة.
 - **معلومات السيشن (زرار `i`):** الكونتكست دلوقتي ونسبته من الشباك وآخر ضغط، المود والإيفورت، التوكنز المتحاسبة، وحالة git (الفرع، الـ commits اللي لسه ما اترفعتش، الملفات المتعدّلة) مع `npx ccpreview`.

@@ -261,7 +261,10 @@ function saveUiNow() { try { localStorage.setItem(LS_UI, JSON.stringify(ui)); } 
 function writeHash() {
   let h;
   if (ui.tab === 'sessions') {
-    const parts = (ui.panes || []).map((k) => [k.dir, k.id, k.agent].filter(Boolean).map(encodeURIComponent).join('/'));
+    const ks = (ui.panes || []).map((k) => [k.dir, k.id, k.agent].filter(Boolean).map(encodeURIComponent).join('/'));
+    const sh = validShape(ui.shape, ks.length) || ks.map(() => 1);
+    let at = 0;
+    const parts = sh.map((n) => ks.slice(at, (at += n)).join('~'));
     h = '#s' + (parts.length ? '/' + parts.join('+') : '');
   } else h = `#p/${state.cur + 1}`;
   if (location.hash !== h) history.replaceState(null, '', h);
@@ -273,11 +276,18 @@ function readHash() {
     const rest = raw.slice(2);
     if (rest) {
       const old = ui.panes || [];
-      ui.panes = rest.split('+').map((seg) => {
-        const [dir, id, agent] = seg.split('/').map(decodeURIComponent);
-        const prev = old.find((k) => k.dir === dir && k.id === id && (k.agent || '') === (agent || ''));
-        return { dir, id, agent: agent || '', title: prev ? prev.title : '' };
-      }).filter((k) => k.dir && k.id);
+      // "A+B~C": two columns, the second one has B above C
+      const shape = [];
+      ui.panes = rest.split('+').flatMap((group) => {
+        const ks = group.split('~').map((seg) => {
+          const [dir, id, agent] = seg.split('/').map(decodeURIComponent);
+          const prev = old.find((k) => k.dir === dir && k.id === id && (k.agent || '') === (agent || ''));
+          return { dir, id, agent: agent || '', title: prev ? prev.title : '' };
+        }).filter((k) => k.dir && k.id);
+        if (ks.length) shape.push(ks.length);
+        return ks;
+      });
+      ui.shape = rest.includes('~') ? shape : null; // an old link has no layout: spread them out
     }
   } else if (raw.startsWith('p/')) {
     ui.tab = 'pages';
@@ -970,7 +980,7 @@ function newTabObj() {
   grid.className = 'pgrid';
   gridsEl.append(grid);
   wireGrid(grid);
-  return { panes: [], activePane: null, grid };
+  return { panes: [], shape: [], activePane: null, grid };
 }
 function bindTab(i) {
   curTab = i;
@@ -983,6 +993,48 @@ function bindTab(i) {
 function saveCurTab() { if (tabs[curTab]) tabs[curTab].activePane = activePane; }
 tabs = [newTabObj()];
 bindTab(0);
+
+// A tab's layout is columns, each a vertical stack of panes. tab.panes is the flat list in column order and
+// tab.shape says how many panes each column has, so shape = [2, 1] is a column with two panes and one with one.
+const validShape = (sh, n) => (Array.isArray(sh) && sh.length && sh.every((x) => Number.isInteger(x) && x > 0) && sh.reduce((a, b) => a + b, 0) === n ? sh : null);
+const fitCols = () => Math.max(1, Math.min(4, Math.floor((panesEl && panesEl.clientWidth || window.innerWidth) / MIN_PANE_W)));
+// no saved layout: one column each while they fit, else spread them evenly over as many columns as fit
+function autoShape(n) {
+  const cols = Math.max(1, Math.min(n, fitCols()));
+  return Array.from({ length: cols }, (_, i) => Math.floor(n / cols) + (i < n % cols ? 1 : 0));
+}
+function columns(tb) {
+  const n = tb.panes.length;
+  tb.shape = validShape(tb.shape, n) || (n ? autoShape(n) : []);
+  let at = 0;
+  return tb.shape.map((k) => tb.panes.slice(at, (at += k)));
+}
+// replace the layout: cols is an array of columns (arrays of panes)
+function setCols(tb, cols) {
+  cols = cols.filter((c) => c.length);
+  tb.panes.splice(0, tb.panes.length, ...cols.flat());
+  tb.shape = cols.map((c) => c.length);
+}
+// put the panes of a tab into its column elements (moving a pane's element loses its scroll position: keep it)
+function syncDom(tb) {
+  const cols = columns(tb);
+  const grid = tb.grid;
+  let colEls = [...grid.children].filter((e) => e.classList.contains('pcol'));
+  colEls.slice(cols.length).forEach((e) => e.remove());
+  colEls = colEls.slice(0, cols.length);
+  while (colEls.length < cols.length) { const c = document.createElement('div'); c.className = 'pcol'; grid.append(c); colEls.push(c); }
+  const moved = [];
+  cols.forEach((col, ci) => {
+    const ce = colEls[ci];
+    col.forEach((p, k) => {
+      if (ce.children[k] === p.el) return;
+      moved.push([p, p.scroll ? p.scroll.scrollTop : 0]);
+      ce.insertBefore(p.el, ce.children[k] || null);
+    });
+    while (ce.children.length > col.length) ce.lastChild.remove();
+  });
+  moved.forEach(([p, top]) => { if (top && p.scroll) p.scroll.scrollTop = top; });
+}
 
 async function loadSessions() {
   if (!SRC.ready || serverOff) { renderSessions(); return; }
@@ -2623,49 +2675,63 @@ function updateGroup(g) {
 }
 
 // ---------- pane management ----------
-// How many columns a row gets: as many as fit at MIN_PANE_W (at most 4), spread evenly over the rows needed,
-// so 5 panes are 3 + 2 and not 4 + 1. More panes than fit make more rows; the area scrolls down.
-function paneCols(n, width) {
-  const fit = Math.max(1, Math.min(4, Math.floor(width / MIN_PANE_W)));
-  return Math.max(1, Math.ceil(n / Math.ceil(n / fit)));
-}
 function layoutPanes() {
-  const cols = paneCols(panes.length, panesEl.clientWidth || window.innerWidth);
+  const tb = tabs[curTab];
+  syncDom(tb);
   panesEl.dataset.n = panes.length;
-  panesEl.dataset.cols = cols;
-  panesEl.style.setProperty('--cols', cols);
-  // a last row with fewer panes than columns: its last pane takes the free slots instead of leaving a hole
-  panes.forEach((p) => { p.el.style.gridColumn = ''; });
-  const rem = panes.length % cols;
-  if (rem && panes.length > cols) panes[panes.length - 1].el.style.gridColumn = `span ${cols - rem + 1}`;
+  panesEl.dataset.cols = Math.min(4, tb.shape.length); // the compact text rules follow the number of columns
+  panesEl.style.setProperty('--cols', tb.shape.length);
   panes.forEach((p) => p.el.classList.toggle('active', p === activePane && panes.length > 1));
 }
+// A new pane goes in a new column after the active one while columns fit, then under the active pane.
 function addPane() {
   if (panes.length >= MAX_PANES) { toast(t('pane.max', { n: MAX_PANES })); return activePane; }
   const p = new Pane();
-  const i = activePane ? panes.indexOf(activePane) + 1 : panes.length;
-  panes.splice(i, 0, p);
-  panesEl.insertBefore(p.el, panesEl.children[i] || null);
+  const tb = tabs[curTab];
+  const cols = columns(tb);
+  const ci = activePane ? cols.findIndex((c) => c.includes(activePane)) : cols.length - 1;
+  if (ci < 0) cols.push([p]);
+  else if (cols.length < fitCols()) cols.splice(ci + 1, 0, [p]);
+  else cols[ci].splice(cols[ci].indexOf(activePane) + 1, 0, p);
+  setCols(tb, cols);
   p.renderEmpty();
   layoutPanes();
-  p.el.scrollIntoView({ block: 'nearest' }); // a pane that starts a new row below the fold
+  p.el.scrollIntoView({ block: 'nearest' }); // a pane that lands on the part below the fold
   return p;
 }
 // ---------- drag a pane by its header to move it ----------
 const PANE_DRAG = 'application/x-ccpreview-pane';
 let dragPane = null;
+// Where a dragged pane would land on the pane under the pointer, like VS Code: the outer thirds beside it make a
+// new column there; the middle goes above (upper half) or below (lower half) it, in the same column.
 function dropSpot(e) {
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const over = el && el.closest('.pane-v');
   const target = over && panes.find((p) => p.el === over);
   if (!target || target === dragPane) return null;
   const r = over.getBoundingClientRect();
-  const left = e.clientX < r.left + r.width / 2;
-  // "before" is the inline-start half: the right half in an RTL page
+  const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
   const rtl = getComputedStyle(panesEl).direction === 'rtl';
-  return { target, after: rtl ? left : !left };
+  let zone;
+  if (fx < 0.3) zone = rtl ? 'after' : 'before';
+  else if (fx > 0.7) zone = rtl ? 'before' : 'after';
+  else zone = fy < 0.5 ? 'top' : 'bottom';
+  const shows = { before: rtl ? 'drop-r' : 'drop-l', after: rtl ? 'drop-l' : 'drop-r', top: 'drop-t', bottom: 'drop-b' };
+  return { target, zone, cls: shows[zone] };
 }
-function clearDrop() { panes.forEach((p) => p.el.classList.remove('drop-before', 'drop-after')); }
+const DROP_CLASSES = ['drop-l', 'drop-r', 'drop-t', 'drop-b'];
+function clearDrop() { allPanes().forEach((p) => p.el.classList.remove(...DROP_CLASSES)); }
+function movePane(p, target, zone) {
+  const tb = tabs[curTab];
+  const cols = columns(tb).map((c) => c.filter((x) => x !== p)).filter((c) => c.length);
+  const ci = cols.findIndex((c) => c.includes(target));
+  if (zone === 'top' || zone === 'bottom') cols[ci].splice(cols[ci].indexOf(target) + (zone === 'bottom' ? 1 : 0), 0, p);
+  else cols.splice(ci + (zone === 'after' ? 1 : 0), 0, [p]);
+  setCols(tb, cols);
+  layoutPanes();
+  persistPanes();
+  p.el.scrollIntoView({ block: 'nearest' });
+}
 function wireGrid(grid) {
   new ResizeObserver(() => { if (grid === panesEl && panes.length) layoutPanes(); }).observe(grid);
   grid.addEventListener('dragstart', (e) => {
@@ -2684,7 +2750,7 @@ function wireGrid(grid) {
     e.dataTransfer.dropEffect = 'move';
     clearDrop();
     const spot = dropSpot(e);
-    if (spot) spot.target.el.classList.add(spot.after ? 'drop-after' : 'drop-before');
+    if (spot) spot.target.el.classList.add(spot.cls);
     // rows below the fold: scroll while the pointer rests near the top or bottom edge
     const r = grid.getBoundingClientRect();
     if (e.clientY > r.bottom - 60) grid.scrollTop += 18;
@@ -2694,14 +2760,7 @@ function wireGrid(grid) {
     if (!dragPane) return;
     e.preventDefault();
     const spot = dropSpot(e);
-    if (spot) {
-      panes.splice(panes.indexOf(dragPane), 1);
-      panes.splice(panes.indexOf(spot.target) + (spot.after ? 1 : 0), 0, dragPane);
-      panes.forEach((p) => grid.append(p.el)); // appending in order re-sorts the DOM
-      layoutPanes();
-      persistPanes();
-      dragPane.el.scrollIntoView({ block: 'nearest' });
-    }
+    if (spot) movePane(dragPane, spot.target, spot.zone);
   });
 }
 document.addEventListener('dragend', () => {
@@ -2731,10 +2790,11 @@ const tabLead = (tb, i) => {
   const act = i === curTab ? activePane : tb.activePane;
   return (act && act.key ? act : ps.find((p) => p.key)) || null;
 };
+let tabsHtml = '';
 function renderTabs() {
   tabbarEl.hidden = tabs.length < 2;
-  if (tabs.length < 2) return;
-  tabbarEl.innerHTML = tabs.map((tb, i) => {
+  if (tabs.length < 2) { tabsHtml = ''; return; }
+  const html = tabs.map((tb, i) => {
     const ps = i === curTab ? panes : tb.panes;
     const lead = tabLead(tb, i);
     const title = lead ? lead.title || lead.key.id.slice(0, 8) : t('tab.new');
@@ -2743,6 +2803,11 @@ function renderTabs() {
       `<span class="vt-t" dir="${textDir(title)}">${esc(title)}</span>${ps.length > 1 ? `<span class="vt-n">${num(ps.length)}</span>` : ''}` +
       `<button class="vt-x" data-close title="${esc(t('tab.close_tip'))}">${ICON.x}</button></div>`;
   }).join('') + `<button class="vtab-add" data-add title="${esc(t('tab.add_tip'))}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
+  // The list refreshes every few seconds: rebuilding it while a tab is being dragged would cancel the drag,
+  // and an unchanged bar is left alone.
+  if (dragTab >= 0 || html === tabsHtml) return;
+  tabsHtml = html;
+  tabbarEl.innerHTML = html;
   const cur = tabbarEl.querySelector('.vtab.cur');
   if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
@@ -2760,7 +2825,6 @@ function addTab(target) {
   bindTab(curTab + 1);
   const p = new Pane();
   panes.push(p);
-  panesEl.append(p.el);
   activePane = p;
   if (target) p.open(target); else p.renderEmpty();
   layoutPanes();
@@ -2859,8 +2923,9 @@ function setActive(p) {
 function closePane(p) {
   if (panes.length === 1 && tabs.length > 1) { closeTab(curTab); return; } // a tab with nothing in it goes away
   const i = panes.indexOf(p);
+  const tb = tabs[curTab];
   p.destroy();
-  panes.splice(i, 1);
+  setCols(tb, columns(tb).map((c) => c.filter((x) => x !== p)));
   paintHighlights();
   if (activePane === p) activePane = panes[Math.min(i, panes.length - 1)] || null;
   layoutPanes();
@@ -2890,9 +2955,12 @@ function persistPanes() {
   saveCurTab();
   ui.panes = panes.filter((p) => p.key).map((p) => ({ ...p.key, title: p.title }));
   ui.activePane = Math.max(0, panes.filter((p) => p.key).indexOf(activePane));
+  // the layout counts only panes that hold a session (an empty one is not saved)
+  const keyedShape = (tb) => columns(tb).map((c) => c.filter((p) => p.key).length).filter((n) => n > 0);
+  ui.shape = keyedShape(tabs[curTab]);
   ui.vtabs = tabs.map((tb) => {
-    const ps = tb.panes.filter((p) => p.key);
-    return { panes: ps.map((p) => ({ ...p.key, title: p.title })), active: Math.max(0, ps.indexOf(tb.activePane)) };
+    const ps = columns(tb).flat().filter((p) => p.key);
+    return { panes: ps.map((p) => ({ ...p.key, title: p.title })), shape: keyedShape(tb), active: Math.max(0, ps.indexOf(tb.activePane)) };
   });
   ui.vtab = curTab;
   renderTabs();
@@ -3342,7 +3410,6 @@ function fillPanes(keys, restoring) {
   keys.slice(0, MAX_PANES).forEach((k) => {
     const p = new Pane();
     panes.push(p);
-    panesEl.append(p.el);
     p.open(k, restoring);
   });
 }
@@ -3351,6 +3418,7 @@ function restorePanes(restoring) {
   panes.length = 0;
   activePane = null;
   fillPanes(ui.panes || [], restoring);
+  tabs[curTab].shape = validShape(ui.shape, panes.length) || autoShape(panes.length);
   activePane = panes[ui.activePane] || panes[0] || null;
   layoutPanes();
   persistPanes();
@@ -3359,19 +3427,27 @@ function restorePanes(restoring) {
 function restoreTabs(restoring) {
   tabs.forEach((tb) => { tb.panes.forEach((p) => p.destroy()); tb.grid.remove(); });
   tabs = [];
-  let saved = (ui.vtabs || []).slice(0, MAX_TABS).map((tb) => (tb && Array.isArray(tb.panes) ? tb : { panes: [], active: 0 }));
+  let saved = (ui.vtabs || []).slice(0, MAX_TABS).map((tb) => (tb && Array.isArray(tb.panes) ? tb : { panes: [], shape: [], active: 0 }));
   let cur = Math.max(0, Math.min(ui.vtab || 0, saved.length - 1));
-  if (!saved.length) saved = [{ panes: ui.panes || [], active: ui.activePane || 0 }];
-  else if (ui.panes && ui.panes.length) saved[cur] = { panes: ui.panes, active: ui.activePane || 0 }; // the URL is the tab being shown
+  if (!saved.length) saved = [{ panes: ui.panes || [], shape: ui.shape, active: ui.activePane || 0 }];
+  else if (ui.panes && ui.panes.length) saved[cur] = { panes: ui.panes, shape: ui.shape, active: ui.activePane || 0 }; // the URL is the tab being shown
   // a session is open once: drop copies left by older versions (the same session in several tabs or columns),
   // keeping the ones in the tab being shown; tabs left empty go
   const seen = new Set();
   const uniq = saved.map(() => []);
+  const shapes = saved.map(() => []); // the layout, with the dropped copies taken out of their columns
   [cur, ...saved.map((_, i) => i).filter((i) => i !== cur)].forEach((i) => {
-    uniq[i] = saved[i].panes.filter((k) => k && k.dir && k.id && !seen.has(keyOf(k)) && seen.add(keyOf(k)));
+    const sh = validShape(saved[i].shape, saved[i].panes.length);
+    let at = 0;
+    (sh || [saved[i].panes.length]).forEach((n, ci) => {
+      const col = saved[i].panes.slice(at, (at += n)).filter((k) => k && k.dir && k.id && !seen.has(keyOf(k)) && seen.add(keyOf(k)));
+      uniq[i].push(...col);
+      if (col.length) shapes[i].push(col.length);
+    });
+    if (!sh) shapes[i] = null; // no saved layout: spread them out
   });
   const keep = saved.map((_, i) => i).filter((i) => uniq[i].length);
-  const was = keep.map((i) => ({ panes: uniq[i], active: Math.min(saved[i].active || 0, uniq[i].length - 1) }));
+  const was = keep.map((i) => ({ panes: uniq[i], shape: shapes[i], active: Math.min(saved[i].active || 0, uniq[i].length - 1) }));
   const wasCur = keep.indexOf(cur);
   saved = was.length ? was : [{ panes: [], active: 0 }];
   cur = Math.max(0, wasCur);
@@ -3379,8 +3455,10 @@ function restoreTabs(restoring) {
     tabs.push(newTabObj());
     bindTab(i);
     fillPanes(sv.panes, restoring);
+    tabs[i].shape = validShape(sv.shape, panes.length) || autoShape(panes.length);
     activePane = panes[sv.active] || panes[0] || null;
     saveCurTab();
+    syncDom(tabs[i]); // every tab gets its panes in place now, shown or not
   });
   bindTab(Math.min(cur, tabs.length - 1));
   layoutPanes();
