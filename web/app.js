@@ -2992,7 +2992,7 @@ document.addEventListener('dragend', () => {
 // A plain mouse wheel over a strip that only scrolls sideways (the subagent chips, the tab bar) scrolls it
 // sideways, so Shift is not needed. A strip with nothing to scroll leaves the wheel to the page.
 document.addEventListener('wheel', (e) => {
-  const strip = e.target.closest && e.target.closest('.pagents, #tabbar');
+  const strip = e.target.closest && e.target.closest('.pagents, .pbg, #tabbar');
   if (!strip || e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || strip.scrollWidth <= strip.clientWidth) return;
   const rtl = getComputedStyle(strip).direction === 'rtl';
   const d = (e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY) * (rtl ? -1 : 1); // in RTL the end of the strip is at scrollLeft <= 0
