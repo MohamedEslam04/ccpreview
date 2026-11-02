@@ -1056,6 +1056,7 @@ async function loadSessions() {
   renderEmptyView();
   allPanes().forEach((p) => p.renderHead());
   renderTabs();
+  if (!SERVER) loadUsage(); // folder mode: appears once the source is ready
 }
 
 // What the sidebar shows when there is nothing to read yet.
@@ -2805,7 +2806,7 @@ function infoHtml(st, agent, sess, g) {
 function gitRow(g, row) {
   const label = t('info.git');
   if (!g) return serverOff || !SRC.ready ? '' : row(label, `<small>${t('git.loading')}</small>`);
-  if (g.unsupported) return row(label, `<small>${t('git.needs_server')}</small>`);
+  if (g.unsupported) return ''; // a web page cannot run git: no row at all rather than a nag (the branch row still shows)
   if (g.failed) return row(label, `<small>${t('git.failed')}</small>`);
   if (!g.repo) return row(label, `<small>${t(g.gone ? 'git.gone' : 'git.not_repo')}</small>`);
   const counts = { staged: 0, changed: 0, untracked: 0, conflict: 0 };
@@ -3494,8 +3495,7 @@ function usageRow(label, w) {
 }
 function renderUsage() {
   const b = $('usageBtn');
-  b.hidden = !SERVER; // folder mode has no server to read the recorded numbers from
-  if (!SERVER) return;
+  b.hidden = !SERVER && !SRC.ready; // folder mode reads the recorded numbers from ~/.ccpreview once it is connected
   const five = usage && usageWin(usage.five_hour), week = usage && usageWin(usage.seven_day);
   const top = Math.max(five ? five.pct : 0, week ? week.pct : 0);
   b.className = `icon-btn usage-btn ${usage ? usageLevel(top) : ''}`;
@@ -3505,16 +3505,41 @@ function renderUsage() {
   const m = $('usageMenu');
   if (m.hidden) return;
   const stale = usage && Date.now() - usage.ts > 3600e3;
+  if (!SERVER && SRC.dataState !== 'ready') { m.innerHTML = dataConnectHtml(); return; }
   m.innerHTML = usage
     ? usageRow(t('usage.session'), five) + usageRow(t('usage.week'), week) +
       `<div class="u-foot">${esc(t(stale ? 'usage.stale' : 'usage.updated', { ago: ago(usage.ts) }))}</div>`
     : `<div class="u-foot" style="margin:0;padding:0;border:0">${t('usage.setup', { cmd: '<code>npx ccpreview usage install</code>' })}</div>`;
 }
 async function loadUsage() {
-  if (!SERVER || serverOff) return;
-  try { usage = await (await fetch('/api/usage')).json(); } catch (e) { return; }
+  if (serverOff || !SRC.ready) return;
+  if (!SERVER && SRC.dataState !== 'ready') { usage = null; renderUsage(); return; } // shows the "connect the folder" card
+  usage = await SRC.usage();
   renderUsage();
 }
+// folder mode: usage numbers and waiting questions are files in ~/.ccpreview, which the page reads once connected
+function dataConnectHtml() {
+  const again = SRC.dataState === 'needs-permission';
+  return `<p class="u-note" dir="auto">${esc(t(again ? 'data.connect_again' : 'data.connect_text'))}</p>` +
+    `<p class="bgv-dir"><span class="ipath" dir="ltr">~/.ccpreview</span><button class="icopy" data-copy="~/.ccpreview" title="${esc(t('info.copy'))}">${ICON.copy}</button></p>` +
+    `<div class="bgv-actions"><button class="btn primary" data-data-connect>${esc(t(again ? 'data.allow' : 'data.pick'))}</button></div>` +
+    `<small class="u-note" dir="auto">${esc(t('data.note'))}</small>`;
+}
+async function connectData() {
+  try {
+    await (SRC.dataState === 'needs-permission' ? SRC.reconnectData() : SRC.pickData());
+  } catch (err) {
+    if (err && err.name !== 'AbortError') toast(t('data.failed'));
+    return;
+  }
+  await loadUsage();
+  loadSessions(); // sessions waiting on a question show up in the list
+}
+$('usageMenu').addEventListener('click', (e) => {
+  const c = e.target.closest('[data-copy]');
+  if (c) copyText(c.dataset.copy).then((ok) => toast(t(ok ? 'info.copied' : 'copy.failed')));
+  else if (e.target.closest('[data-data-connect]')) connectData();
+});
 $('usageBtn').onclick = async (e) => {
   e.stopPropagation();
   const m = $('usageMenu');

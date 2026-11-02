@@ -638,3 +638,21 @@ test('locateTasks finds <session>/tasks from /tmp, from claude-<uid>, from the p
   assert.strictEqual(await core.locateTasks(proj, 'sess-1'), tasks);
   assert.strictEqual(await core.locateTasks(tmp, 'nope'), null);
 });
+
+// ---------- what the optional hook / statusline tap leave in ~/.ccpreview (read by the server or the hosted page) ----------
+
+test('parsePending: a recent question or plan, nothing else', () => {
+  const now = 1e12;
+  assert.deepStrictEqual(core.parsePending({ tool: 'AskUserQuestion', id: 'tu1', input: { q: 1 }, at: now - 1000, extra: 'x' }, now), { tool: 'AskUserQuestion', id: 'tu1', input: { q: 1 }, at: now - 1000 });
+  assert.strictEqual(core.parsePending({ tool: 'ExitPlanMode', at: now - 13 * 3600e3 }, now), null, 'stale after 12h');
+  assert.strictEqual(core.parsePending({ tool: 'Bash', at: now }, now), null);
+  assert.strictEqual(core.parsePending({ tool: 'AskUserQuestion', at: 'x' }, now), null);
+  assert.strictEqual(core.parsePending(null, now), null);
+});
+
+test('parseUsage: clamped numbers only, null when nothing usable', () => {
+  assert.deepStrictEqual(core.parseUsage({ five_hour: { pct: 140, resets_at: 1800000000, extra: 'x' }, seven_day: { pct: 'high' }, secret: 's', ts: 5 }),
+    { five_hour: { pct: 100, resets_at: 1800000000 }, seven_day: null, ts: 5 });
+  assert.strictEqual(core.parseUsage({ five_hour: null }), null);
+  assert.strictEqual(core.parseUsage(undefined), null);
+});

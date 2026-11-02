@@ -11,6 +11,7 @@
  *   source.list({ all, more })  -> Promise<projects>
  *   source.open(ref, handlers)  -> { close() }   handlers: reset(), events(list), ready()
  *   source.git(ref)             -> Promise<git status of the session's folder | { unsupported: true } | null on failure>
+ *   source.usage()              -> Promise<plan usage recorded by the statusline tap | null>   (folder mode: needs dataState 'ready')
  *   source.task(ref, task, since) -> Promise<output file of a background command | { unsupported: true, need } | null on failure>
  *                                 folder mode: needs the temp folder connected (tmpState, pickTmp, reconnectTmp)
  */
@@ -44,6 +45,9 @@
         const r = await fetch('/api/git?' + qs);
         return r.ok ? await r.json() : null;
       } catch (e) { return null; }
+    }
+    async usage() {
+      try { return await (await fetch('/api/usage')).json(); } catch (e) { return null; }
     }
     // What a background command (or monitor) has printed so far: the tail of its output file, found by the server
     // from the session id and task id. `since` is the `sig` of the last answer; { found, same: true } means unchanged.
@@ -101,7 +105,7 @@
   // ---------------------------------------------------------------- folder (File System Access API)
   // The picked folder's handle lives in its own database; the session-meta cache in another one, so adding
   // it never needs a version upgrade of the first (an upgrade waits for every other open tab to let go).
-  const DBS = { handles: ['ccpreview', 'handles'], meta: ['ccpreview-meta', 'meta'], tmp: ['ccpreview-tmp', 'handles'] };
+  const DBS = { handles: ['ccpreview', 'handles'], meta: ['ccpreview-meta', 'meta'], tmp: ['ccpreview-tmp', 'handles'], data: ['ccpreview-data', 'handles'] };
   function idb(which, mode, fn) {
     const [name, store] = DBS[which];
     return new Promise((resolve, reject) => {
@@ -128,6 +132,10 @@
 const saveTmp = (h) => idb('tmp', 'readwrite', (s) => s.put(h, 'tmp'));
 const loadTmp = () => idb('tmp', 'readonly', (s) => s.get('tmp')).catch(() => null);
 const forgetTmp = () => idb('tmp', 'readwrite', (s) => s.delete('tmp')).catch(() => {});
+// ~/.ccpreview (usage numbers from the statusline tap, questions from the hook), remembered the same way
+const saveData = (h) => idb('data', 'readwrite', (s) => s.put(h, 'data'));
+const loadData = () => idb('data', 'readonly', (s) => s.get('data')).catch(() => null);
+const forgetData = () => idb('data', 'readwrite', (s) => s.delete('data')).catch(() => {});
 const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).catch(() => {});
 
   async function* dirEntries(dirHandle) {
@@ -174,9 +182,17 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
       if (!h) return 'needs-folder';
       const perm = await h.queryPermission({ mode: 'read' });
       this.loadTmpHandle(); // not awaited: only the Background view needs it
+      this.loadDataHandle(); // likewise: only usage and waiting questions
       if (perm === 'granted') { this.use(h); await this.restoreMeta(); return 'ready'; }
       this.pending = h;
       return 'needs-permission';
+    }
+    async loadDataHandle() {
+      const h = await loadData();
+      if (!h) return;
+      try {
+        if ((await h.queryPermission({ mode: 'read' })) === 'granted') this.dataRoot = h; else this.dataPending = h;
+      } catch (e) { /* handle no longer valid */ }
     }
     async loadTmpHandle() {
       const h = await loadTmp();
@@ -220,6 +236,7 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
       await forgetHandle();
       await forgetMeta();
       await this.forgetTmpFolder();
+      await this.forgetDataFolder();
       this.root = null;
       this.pending = null;
       this.ready = false;
@@ -338,6 +355,49 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
       this.tmpRoot = this.tmpPending;
       this.tmpPending = null;
     }
+    // ~/.ccpreview: what the optional statusline tap (usage) and hook (waiting questions) record. Read-only.
+    get dataState() { return this.dataRoot ? 'ready' : this.dataPending ? 'needs-permission' : 'needs-folder'; }
+    async pickData() {
+      let h = await window.showDirectoryPicker({ id: 'ccpreview-data', mode: 'read' });
+      if (h.name !== '.ccpreview') { try { h = await h.getDirectoryHandle('.ccpreview'); } catch (e) { /* picked it directly, or it is not there yet */ } }
+      await saveData(h);
+      this.dataRoot = h;
+      this.dataPending = null;
+    }
+    async reconnectData() {
+      if (!this.dataPending) return this.pickData();
+      if ((await this.dataPending.requestPermission({ mode: 'read' })) !== 'granted') throw new Error('permission-denied');
+      this.dataRoot = this.dataPending;
+      this.dataPending = null;
+    }
+    async readJson(dir, name) {
+      const f = await (await dir.getFileHandle(name)).getFile();
+      return JSON.parse(await f.text());
+    }
+    async usage() {
+      if (!this.dataRoot) return null;
+      try { return core.parseUsage(await this.readJson(this.dataRoot, 'usage.json')); } catch (e) { return null; }
+    }
+    async pendingDir() {
+      if (!this.dataRoot) return null;
+      try { return await this.dataRoot.getDirectoryHandle('pending'); } catch (e) { return null; }
+    }
+    async pendingOf(id) {
+      const dir = await this.pendingDir();
+      if (!dir || !core.safeId(id)) return null;
+      try { return core.parsePending(await this.readJson(dir, id + '.json'), Date.now()); } catch (e) { return null; }
+    }
+    async askingIds() {
+      const ids = new Set();
+      const dir = await this.pendingDir();
+      if (!dir) return ids;
+      for await (const [name, h] of dirEntries(dir)) {
+        const m = h.kind === 'file' && name.match(/^([\w-]+)\.json$/);
+        if (m && (await this.pendingOf(m[1]))) ids.add(m[1]);
+      }
+      return ids;
+    }
+    async forgetDataFolder() { await forgetData(); this.dataRoot = this.dataPending = null; }
     async forgetTmpFolder() { await forgetTmp(); this.tmpRoot = this.tmpPending = null; this.tasksDirs = new Map(); }
     // same answer as the server's /api/task; { unsupported, need } until the temp folder is connected
     async task(ref, task, since) {
@@ -369,7 +429,8 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
         const list = await core.listSessions(this.adapter, this.metaCache, all ? new Set(['*']) : new Set(more || []), onProgress);
         const sig = this.metaSig();
         if (sig !== this.savedSig) { this.savedSig = sig; saveMeta(core.packMeta(this.metaCache)).catch(() => {}); }
-        return list;
+        const asking = await this.askingIds();
+        return asking.size ? list.map((pr) => ({ ...pr, sessions: pr.sessions.map((x) => (asking.has(x.id) ? { ...x, state: 'asking' } : x)) })) : list;
       });
       this.chain = job.catch(() => {});
       return job;
@@ -377,15 +438,21 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
 
     // live view: re-read the file every second and pass on what was appended
     open(ref, h) {
-      let offset = 0, closed = false, busy = false, first = true;
+      let offset = 0, closed = false, busy = false, first = true, pendingSig = '';
       const pump = async () => {
         if (closed || busy || !this.ready) return;
         busy = true;
         try {
           const r = await this.adapter.readLines(ref, offset);
           if (closed) return;
-          if (r.reset) h.reset();
+          if (r.reset) { h.reset(); pendingSig = ''; }
           offset = r.offset;
+          if (!ref.agent && this.dataRoot) {
+            // the question the hook reports as waiting: sent when it appears, changes or goes away
+            const p = await this.pendingOf(ref.id);
+            const sig = p ? `${p.id}:${p.at}` : '';
+            if (sig !== pendingSig && !closed) { pendingSig = sig; h.events([{ k: 'pending', p }]); }
+          }
           for (let i = 0; i < r.lines.length && !closed; i += 400) {
             const ev = r.lines.slice(i, i + 400).flatMap((l) => core.convert(l, !!ref.agent, this.adapter.storeImage));
             if (ev.length) h.events(ev);

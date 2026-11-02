@@ -49,14 +49,14 @@ npx ccpreview
 ### Background commands and watchers
 - A Background bar per session lists every command Claude left running (`run_in_background` Bash calls and Monitor watchers) with its state: running, done, failed or stopped.
 - Click one for the full command, the files it writes and reads (taken from the command text, so a path held in a variable is missed), and the live tail of its output (the last 64 KB, refreshed every two seconds while it runs).
-- The output comes from the file Claude Code writes under your temp folder (`claude-<uid>/<project>/<session>/tasks/<task>.output`), so it needs `npx ccpreview`. On the hosted page you see the commands and their state, without the output. Long lists fold and filter like the subagents bar.
+- The output comes from the file Claude Code writes under your temp folder (`claude-<uid>/<project>/<session>/tasks/<task>.output`), `npx ccpreview` reads it for you. On the hosted page the Background view asks you once to choose that folder (it shows the exact path, usually `/tmp/claude-<uid>`); the access is read-only and the browser remembers it. Long lists fold and filter like the subagents bar.
 
 ### Session info
 Press `i` or the info button for a panel with:
 - **Context now**: how much of the context window the latest request used, and when the conversation was last compacted.
 - **Mode and effort**: the permission mode (`auto`, `plan`, ...) and the effort level.
 - **Billed tokens**: input, output, cache reads and cache writes over all requests.
-- **Git** (with `npx ccpreview`): branch, unpushed commits, staged, modified and untracked files, and the last commit.
+- **Git** (only with `npx ccpreview`, since a web page cannot run git; the hosted page leaves the row out): branch, unpushed commits, staged, modified and untracked files, and the last commit.
 - Model, duration, folder, tool counts and the files the session changed (click one to jump to its last edit).
 
 ![The session info panel: context size, mode and effort, tokens and git status](https://raw.githubusercontent.com/MohamedEslam04/ccpreview/main/docs/screenshots/info.png)
@@ -148,7 +148,7 @@ With the hook, a waiting question or plan appears as a card at the end of the se
 - `install` only adds its own entries to `~/.claude/settings.json` (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop` and `UserPromptSubmit`). Every other setting and hook is left as it is. It is safe to run twice, keeps a backup next to the file as `settings.json.ccpreview-bak`, and refuses to touch a `settings.json` that is not valid JSON.
 - `uninstall` removes only those entries, and the empty lists they leave behind.
 - The hook script is copied to `~/.ccpreview/hooks/pending-ask.js`, and waiting questions are stored in `~/.ccpreview/pending/<session>.json` (private to your user, deleted when answered, ignored after 12 hours). Nothing is written inside `~/.claude` except your `settings.json`. The hook prints nothing and never blocks Claude Code. With `--data`, ccpreview reads `<dir>/pending`, so keep the default if you use the hook.
-- The hosted page cannot read `~/.ccpreview`, so it shows nothing extra. This needs `npx ccpreview`.
+- On the hosted page, the usage gauge in the sidebar footer asks you once to choose `~/.ccpreview` (read-only, remembered by the browser); the same connection shows waiting questions and the "Waiting for you" state. A hidden folder: `Ctrl+H` in the picker on Linux, `Cmd+Shift+.` on macOS.
 
 ## Optional: usage limits
 
@@ -163,7 +163,7 @@ npx ccpreview usage uninstall   # put your original statusLine back
 - `install` changes only the `statusLine` key of `~/.claude/settings.json`. Your own statusline command keeps running, gets the same input and prints the same output, and its other keys (like `padding`) stay. It is safe to run twice, keeps a backup next to the file as `settings.json.ccpreview-bak`, and refuses a `settings.json` that is not valid JSON or a `statusLine` that is not a command.
 - `uninstall` restores your original command exactly (or removes `statusLine` if you had none).
 - The numbers are written to `~/.ccpreview/usage.json` (private to your user) whenever Claude Code redraws its statusline, so they are only as fresh as an active session. Only subscription plans report these limits.
-- The hosted page cannot read `~/.ccpreview`. This needs `npx ccpreview`.
+- On the hosted page, open the usage gauge and choose `~/.ccpreview` once (read-only) to see the numbers.
 
 ## Keyboard shortcuts
 
@@ -227,12 +227,12 @@ ccpreview بيوريك Claude Code بيعمل إيه دلوقتي، في الم�
 - **متابعة لحظة بلحظة:** كل السيشنز متقسمة حسب المشروع أو اليوم، فلاتر (شغالة، مستنياك، مفتوحة، متثبتة، تاريخ)، لحد 12 سيشن جنب بعض (تسحب هيدر السيشن وتسيبه جنب سيشن تانية أو فوقها أو تحتها زي VS Code، ولو مش واسعين بيسكرول لتحت)، وكل سيشن ممكن تفتحها في تابة لوحدها بحجمها الكامل (زرار التابة على الصف أو Shift+كليك)، وإشعار لما سيشن تخلص أو تستناك ترد.
 - **تقرا اللي حصل:** الرسايل بالـ markdown والجداول، الأوامر متجمعة في كل دور، الـ diffs بتاعة الملفات، الخطة وقايمة المهام متثبتين فوق، كروت أسئلة `AskUserQuestion` والإجابة اللي اخترتها، وبحث جوه السيشن بيفهم العربي.
 - **الـ subagents:** شريط لكل سيشن فيه كل agent ومهمته وحالته، وتفتح الـ transcript بتاعه بضغطة. لو كتير بيعرض أول ستة و"+N كمان"، وتفتحه تشوفهم كلهم على كذا سطر وتفلتر بالحالة أو تدوّر بالاسم.
-- **الخلفية (background):** شريط بالكوماندات والـ watchers اللي Claude سابها شغالة (`run_in_background` و`Monitor`) وحالة كل واحدة. تدوس على واحدة تشوف الكوماند كامل، والملفات اللي بتكتبها وتقراها (تخمين من نص الكوماند)، وآخر 64KB من الـ output لايف. الـ output محتاج `npx ccpreview`، وفي الصفحة المستضافة بتشوف الكوماندات وحالتها من غير output.
+- **الخلفية (background):** شريط بالكوماندات والـ watchers اللي Claude سابها شغالة (`run_in_background` و`Monitor`) وحالة كل واحدة. تدوس على واحدة تشوف الكوماند كامل، والملفات اللي بتكتبها وتقراها (تخمين من نص الكوماند)، وآخر 64KB من الـ output لايف. مع `npx ccpreview` بيتقرا لوحده، وفي الصفحة المستضافة بتختار الفولدر المؤقت (المسار بيظهر لك) مرة واحدة، قراءة بس والمتصفح بيفتكره.
 - **معلومات السيشن (زرار `i`):** الكونتكست دلوقتي ونسبته من الشباك وآخر ضغط، المود والإيفورت، التوكنز المتحاسبة، وحالة git (الفرع، الـ commits اللي لسه ما اترفعتش، الملفات المتعدّلة) مع `npx ccpreview`.
 - **الصور:** عارض فيه زوم وسحب وخصائص الصورة وشريط مصغّرات بمعاينة لما تقف عليها.
 - **عربي صح:** الواجهة عربي وإنجليزي، وكل سطر بياخد اتجاه اللغة الغالبة فيه، فاللي مكتوب إنجليزي بيتقري من الشمال واللي عربي من اليمين. فاتح وغامق.
-- **سؤال مستنيك (اختياري):** لو ركّبت الـ hook بـ `npx ccpreview hook install` (و`uninstall` و`status`) بيظهر السؤال أو الخطة وهي لسه مستنياك، مش بعد ما تجاوب. بيضيف سطوره بس في `~/.claude/settings.json` ومبيلمسش حاجة تانية، ومحتاج `npx ccpreview` (الصفحة المستضافة مبتشوفوش).
-- **حدود الاستخدام (اختياري):** `npx ccpreview usage install` (و`uninstall` و`status`) بيسجّل نسبة الـ 5 ساعات والأسبوع ومواعيد التصفير من الـ statusline بتاع Claude Code. بيغلّف أمر الـ statusLine بتاعك من غير ما شكله يتغيّر، ومبيلمسش حاجة تانية في `settings.json`. الرقم بيتحدّث مع كل مرة Claude Code بيرسم فيها الـ statusline، يعني على قد ما فيه سيشن شغّال.
+- **سؤال مستنيك (اختياري):** لو ركّبت الـ hook بـ `npx ccpreview hook install` (و`uninstall` و`status`) بيظهر السؤال أو الخطة وهي لسه مستنياك، مش بعد ما تجاوب. بيضيف سطوره بس في `~/.claude/settings.json` ومبيلمسش حاجة تانية، والتركيب بيتم مرة واحدة بـ `npx`. في الصفحة المستضافة بتختار فولدر `~/.ccpreview` مرة واحدة (قراءة بس) من زرار الاستهلاك تحت الشريط الجانبي، وبعدها بتشوف السؤال المستنيك.
+- **حدود الاستخدام (اختياري):** `npx ccpreview usage install` (و`uninstall` و`status`) بيسجّل نسبة الـ 5 ساعات والأسبوع ومواعيد التصفير من الـ statusline بتاع Claude Code. بيغلّف أمر الـ statusLine بتاعك من غير ما شكله يتغيّر، ومبيلمسش حاجة تانية في `settings.json`. الرقم بيتحدّث مع كل مرة Claude Code بيرسم فيها الـ statusline، يعني على قد ما فيه سيشن شغّال. في الصفحة المستضافة بتفتح مقياس الاستهلاك وتختار `~/.ccpreview` مرة واحدة.
 - **صفحة ملاحظات:** صفحات بمصغّرات، ولو لزقت جدول من التيرمينال أو markdown بيتحوّل لجدول حقيقي.
 
 التشغيل:

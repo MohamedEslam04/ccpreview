@@ -274,6 +274,21 @@
     return null;
   }
 
+  // ---------- what the optional hook and statusline tap leave in ~/.ccpreview ----------
+  // The question or plan a session waits on, or null: only a known tool, and stale after 12h (a hook that never got
+  // its clearing event). Shared by the server and the hosted page, which both read the same files.
+  const PENDING_TOOLS = /^(AskUserQuestion|ExitPlanMode)$/;
+  function parsePending(p, now) {
+    if (!p || !Number.isFinite(p.at) || now - p.at > 12 * 3600e3 || !PENDING_TOOLS.test(p.tool)) return null;
+    return { tool: p.tool, id: String(p.id || ''), input: p.input || {}, at: p.at };
+  }
+  // Plan usage as recorded by the statusline tap. Only numbers go out; null when nothing usable was recorded.
+  function parseUsage(u) {
+    const win = (w) => (w && Number.isFinite(w.pct) ? { pct: Math.max(0, Math.min(100, w.pct)), resets_at: Number.isFinite(w.resets_at) ? w.resets_at : 0 } : null);
+    const out = { five_hour: win(u && u.five_hour), seven_day: win(u && u.seven_day), ts: u && Number.isFinite(u.ts) ? u.ts : 0 };
+    return out.five_hour || out.seven_day ? out : null;
+  }
+
   // ---------- session metadata (title, first prompt, cwd, turn state), updated incrementally ----------
   const emptyMeta = () => ({ offset: 0, title: '', custom: false, prompt: '', cwd: '', state: '' });
 
@@ -440,6 +455,6 @@
 
   return {
     PER_PROJECT, EDGE_BYTES, META_CONCURRENCY, META_V, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
-    updateMeta, listSessions, cmdPaths, locateTasks, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
+    updateMeta, listSessions, cmdPaths, locateTasks, parsePending, parseUsage, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
   };
 });

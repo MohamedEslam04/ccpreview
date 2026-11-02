@@ -413,7 +413,7 @@
   .usage-btn .up { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .usage-btn.warn, .usage-btn.warn .up { color: oklch(0.68 0.15 75); }
   .usage-btn.crit, .usage-btn.crit .up { color: var(--err); }
-  #usageMenu { position: fixed; z-index: 15; width: 270px; padding: 12px 14px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow); animation: in .15s var(--ease); font-size: 12.5px; }
+  #usageMenu { position: fixed; z-index: 15; width: 300px; max-width: calc(100vw - 16px); padding: 12px 14px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow); animation: in .15s var(--ease); font-size: 12.5px; }
   .u-row + .u-row { margin-top: 12px; }
   .u-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; }
   .u-pct { font-variant-numeric: tabular-nums; }
@@ -650,6 +650,7 @@
   .bgv-dir { display: flex; align-items: center; gap: 4px; min-width: 0; }
   .bgv-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
   .bgv-actions small { color: var(--faint); }
+  .u-note { margin: 0 0 6px; line-height: 1.6; } small.u-note { display: block; margin: 8px 0 0; color: var(--faint); }
   .bgv-files { display: flex; flex-direction: column; gap: 2px; }
   .bgp { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .bgp b { flex: none; min-width: 52px; font-size: 10.5px; font-weight: 700; color: var(--muted); }
