@@ -52,12 +52,12 @@ function esc(s) {
 // rendered left-to-right. Returns "rtl", "ltr" or "auto" (no letters at all).
 function textDir(src) {
   const t = String(src || '').replace(/`[^`]*`/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[\w.-]+\/[\w./-]+/g, ' ');
-  // count words, not letters: English terms are long, Arabic function words are short
-  const ar = (t.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]+/g) || []).length;
-  const la = (t.match(/[A-Za-z\u00C0-\u024F]+/g) || []).length;
+  // Compare letters: a sentence built around English phrases with a few Arabic connectives is an English
+  // paragraph (about 35-40% Arabic letters), while real Arabic prose with English terms sits at 65% or more.
+  const ar = (t.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]+/g) || []).join('').length;
+  const la = (t.match(/[A-Za-z\u00C0-\u024F]+/g) || []).join('').length;
   if (!ar && !la) return 'auto';
-  // Arabic prose is full of English terms; it's still an Arabic paragraph when a third of its words are Arabic
-  return ar * 2 >= la ? 'rtl' : 'ltr';
+  return ar >= la * 0.8 ? 'rtl' : 'ltr';
 }
 function toast(msg) {
   const t = $('toast');
