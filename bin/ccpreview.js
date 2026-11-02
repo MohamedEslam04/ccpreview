@@ -12,6 +12,7 @@ Watch your Claude Code sessions live in the browser. Everything stays on this ma
 
 Usage: ccpreview [options]
        ccpreview hook <install|uninstall|status>
+       ccpreview usage <install|uninstall|status>
 
   -p, --port <n>       port to listen on (default 4747; 0 picks a free one)
       --projects <dir> Claude Code projects folder (default ~/.claude/projects, or $CLAUDE_CONFIG_DIR/projects)
@@ -25,6 +26,12 @@ Optional: see a question while it waits (Claude Code only writes it to the trans
   ccpreview hook install    add ccpreview's own entries to ~/.claude/settings.json (backup kept next to it)
   ccpreview hook uninstall  remove only those entries
   ccpreview hook status     show whether the hook is installed and where
+
+Optional: record your plan usage limits (5-hour and weekly) from Claude Code's statusline:
+
+  ccpreview usage install   wrap your statusLine in ~/.claude/settings.json (its output stays the same)
+  ccpreview usage uninstall restore your original statusLine
+  ccpreview usage status    show whether it is installed and when usage was last recorded
 
 ccpreview only listens on 127.0.0.1.`;
 
@@ -81,6 +88,34 @@ function hookCommand(args) {
   }
 }
 
+function usageCommand(args) {
+  const usage = require('../lib/usage-install.js');
+  const { HookError } = require('../lib/hook-install.js');
+  const sub = args[0];
+  if (!['install', 'uninstall', 'status'].includes(sub) || args.length > 1) fail('usage: ccpreview usage <install|uninstall|status>');
+  try {
+    if (sub === 'install') {
+      const r = usage.install();
+      console.log(r.changed ? `Installed. Your statusLine in ${r.settings} now runs ccpreview's recorder first${r.wrapped ? ', then your original command' : ''}.` : `Already installed in ${r.settings}`);
+      if (r.backup) console.log(`Backup of your settings: ${r.backup}`);
+      console.log(`Script: ${r.script}`);
+      console.log('Your statusline output is unchanged. Usage is recorded whenever Claude Code redraws its statusline, so it is only as fresh as an active session.');
+    } else if (sub === 'uninstall') {
+      const r = usage.uninstall();
+      console.log(r.changed ? 'Removed. Your original statusLine is back.' : 'Nothing to remove: usage recording is not installed.');
+    } else {
+      const r = usage.status();
+      if (r.state === 'not-installed') console.log('Usage recording: not installed (run: ccpreview usage install)');
+      else console.log(`Usage recording: installed\nSettings: ${r.settings}\nScript:   ${r.script}${r.scriptExists ? '' : ' (missing, run: ccpreview usage install)'}`);
+      console.log(r.data ? `Last recorded: ${r.data.ageSec < 120 ? `${r.data.ageSec}s` : r.data.ageSec < 7200 ? `${Math.round(r.data.ageSec / 60)}m` : `${Math.round(r.data.ageSec / 3600)}h`} ago (${r.data.file})` : 'No usage recorded yet (it appears after Claude Code next redraws its statusline).');
+    }
+  } catch (e) {
+    if (!(e instanceof HookError)) throw e;
+    console.error(`ccpreview: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 function openBrowser(url) {
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
@@ -92,6 +127,7 @@ function openBrowser(url) {
 }
 
 if (process.argv[2] === 'hook') { hookCommand(process.argv.slice(3)); process.exit(0); }
+if (process.argv[2] === 'usage') { usageCommand(process.argv.slice(3)); process.exit(0); }
 const { createServer } = require('../lib/server.js');
 const opts = parse(process.argv.slice(2));
 // systemd socket activation (see docs/systemd) hands us the listening socket as fd 3

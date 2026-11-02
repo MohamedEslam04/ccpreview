@@ -470,3 +470,13 @@ test('/api/mux/sub caps subscriptions per connection', async () => {
     mux.req.destroy();
   }
 });
+
+test('/api/usage is null until the tap records something, then only clamped numbers', async () => {
+  assert.strictEqual((await request('GET', '/api/usage')).text, 'null');
+  const data = path.join(tmp, 'data');
+  fs.mkdirSync(data, { recursive: true });
+  fs.writeFileSync(path.join(data, 'usage.json'), JSON.stringify({ five_hour: { pct: 140, resets_at: 1800000000, extra: 'x' }, seven_day: { pct: 'high' }, secret: 's', ts: 5 }));
+  const u = JSON.parse((await request('GET', '/api/usage')).text);
+  assert.deepStrictEqual(u, { five_hour: { pct: 100, resets_at: 1800000000 }, seven_day: null, ts: 5 });
+  fs.rmSync(path.join(data, 'usage.json'));
+});

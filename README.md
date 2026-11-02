@@ -142,6 +142,21 @@ With the hook, a waiting question or plan appears as a card at the end of the se
 - The hook script is copied to `~/.ccpreview/hooks/pending-ask.js`, and waiting questions are stored in `~/.ccpreview/pending/<session>.json` (private to your user, deleted when answered, ignored after 12 hours). Nothing is written inside `~/.claude` except your `settings.json`. The hook prints nothing and never blocks Claude Code. With `--data`, ccpreview reads `<dir>/pending`, so keep the default if you use the hook.
 - The hosted page cannot read `~/.ccpreview`, so it shows nothing extra. This needs `npx ccpreview`.
 
+## Optional: usage limits
+
+Claude Code passes your plan usage (the 5-hour session limit and the weekly limit, with their reset times) only to its `statusLine` command. A tiny wrapper can record it for ccpreview. It is off by default and ccpreview works the same without it.
+
+```sh
+npx ccpreview usage install     # wrap your statusLine
+npx ccpreview usage status      # installed or not, and when usage was last recorded
+npx ccpreview usage uninstall   # put your original statusLine back
+```
+
+- `install` changes only the `statusLine` key of `~/.claude/settings.json`. Your own statusline command keeps running, gets the same input and prints the same output, and its other keys (like `padding`) stay. It is safe to run twice, keeps a backup next to the file as `settings.json.ccpreview-bak`, and refuses a `settings.json` that is not valid JSON or a `statusLine` that is not a command.
+- `uninstall` restores your original command exactly (or removes `statusLine` if you had none).
+- The numbers are written to `~/.ccpreview/usage.json` (private to your user) whenever Claude Code redraws its statusline, so they are only as fresh as an active session. Only subscription plans report these limits.
+- The hosted page cannot read `~/.ccpreview`. This needs `npx ccpreview`.
+
 ## Keyboard shortcuts
 
 | Keys | Action |
@@ -208,6 +223,7 @@ ccpreview بيوريك Claude Code بيعمل إيه دلوقتي، في الم�
 - **الصور:** عارض فيه زوم وسحب وخصائص الصورة وشريط مصغّرات بمعاينة لما تقف عليها.
 - **عربي صح:** الواجهة عربي وإنجليزي، وكل سطر بياخد اتجاه اللغة الغالبة فيه، فاللي مكتوب إنجليزي بيتقري من الشمال واللي عربي من اليمين. فاتح وغامق.
 - **سؤال مستنيك (اختياري):** لو ركّبت الـ hook بـ `npx ccpreview hook install` (و`uninstall` و`status`) بيظهر السؤال أو الخطة وهي لسه مستنياك، مش بعد ما تجاوب. بيضيف سطوره بس في `~/.claude/settings.json` ومبيلمسش حاجة تانية، ومحتاج `npx ccpreview` (الصفحة المستضافة مبتشوفوش).
+- **حدود الاستخدام (اختياري):** `npx ccpreview usage install` (و`uninstall` و`status`) بيسجّل نسبة الـ 5 ساعات والأسبوع ومواعيد التصفير من الـ statusline بتاع Claude Code. بيغلّف أمر الـ statusLine بتاعك من غير ما شكله يتغيّر، ومبيلمسش حاجة تانية في `settings.json`. الرقم بيتحدّث مع كل مرة Claude Code بيرسم فيها الـ statusline، يعني على قد ما فيه سيشن شغّال.
 - **صفحة ملاحظات:** صفحات بمصغّرات، ولو لزقت جدول من التيرمينال أو markdown بيتحوّل لجدول حقيقي.
 
 التشغيل:

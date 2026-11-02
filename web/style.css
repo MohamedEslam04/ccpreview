@@ -407,6 +407,23 @@
   .ask-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--accent); }
   .ask-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
   #notifyBtn.on { color: var(--accent); }
+  /* plan usage: gauge button with the highest percentage, and a popover with both limits */
+  .usage-btn { width: auto !important; min-width: 28px; padding: 0 6px; gap: 4px; display: inline-flex; align-items: center; }
+  .usage-btn[hidden] { display: none; }
+  .usage-btn .up { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .usage-btn.warn, .usage-btn.warn .up { color: oklch(0.68 0.15 75); }
+  .usage-btn.crit, .usage-btn.crit .up { color: var(--err); }
+  #usageMenu { position: fixed; z-index: 15; width: 270px; padding: 12px 14px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow); animation: in .15s var(--ease); font-size: 12.5px; }
+  .u-row + .u-row { margin-top: 12px; }
+  .u-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; }
+  .u-pct { font-variant-numeric: tabular-nums; }
+  .u-bar { height: 8px; margin: 6px 0 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .u-bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--live); transition: width .3s var(--ease); }
+  .u-row.warn .u-bar i { background: oklch(0.72 0.15 75); }
+  .u-row.crit .u-bar i { background: var(--err); }
+  .u-reset { color: var(--muted); font-size: 12px; }
+  .u-foot { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line-soft); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .u-foot code { direction: ltr; }
 
 
   .pjump { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 4; box-shadow: var(--shadow); border-radius: 999px; }

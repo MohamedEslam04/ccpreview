@@ -878,6 +878,7 @@ $('langBtn').onclick = () => {
   renderLangBtn();
   applyTheme();
   renderNotifyBtn();
+  renderUsage();
   renderGroupBtn();
   renderWidthMenu();
   setServerUi($('srvBtn').classList.contains('on'));
@@ -3003,6 +3004,65 @@ $('notifyBtn').onclick = async () => {
 };
 
 // =====================================================================
+// plan usage: 5-hour session and weekly limits, as recorded by the optional statusline tap
+// =====================================================================
+let usage = null; // { five_hour: {pct, resets_at}, seven_day: {...}, ts } or null
+const usageLevel = (pct) => (pct >= 90 ? 'crit' : pct >= 70 ? 'warn' : '');
+// A window whose reset time has passed has started over: what was recorded no longer counts.
+const usageWin = (w) => (w ? (w.resets_at && w.resets_at * 1000 <= Date.now() ? { ...w, pct: 0, done: true } : w) : null);
+function usageIn(epochSec) {
+  const min = Math.max(0, Math.floor((epochSec * 1000 - Date.now()) / 60000));
+  const h = Math.floor(min / 60);
+  if (h >= 24) return t('usage.d', { d: num(Math.floor(h / 24)), h: num(h % 24) });
+  return h ? t('usage.h', { h: num(h), m: num(min % 60) }) : t('usage.m', { m: num(min) });
+}
+function usageRow(label, w) {
+  if (!w) return '';
+  const lv = usageLevel(w.pct);
+  const at = w.resets_at ? new Date(w.resets_at * 1000).toLocaleString(LOCALE[LANG], { weekday: w.resets_at * 1000 - Date.now() > 864e5 ? 'short' : undefined, hour: '2-digit', minute: '2-digit' }) : '';
+  const reset = w.done ? t('usage.reset_done') : w.resets_at ? t('usage.resets_in', { t: usageIn(w.resets_at), at }) : '';
+  return `<div class="u-row ${lv}"><div class="u-head"><span>${esc(label)}</span><span class="u-pct">${num(Math.round(w.pct))}%</span></div>` +
+    `<div class="u-bar"><i style="width:${Math.round(w.pct)}%"></i></div><div class="u-reset">${esc(reset)}</div></div>`;
+}
+function renderUsage() {
+  const b = $('usageBtn');
+  b.hidden = !SERVER; // folder mode has no server to read the recorded numbers from
+  if (!SERVER) return;
+  const five = usage && usageWin(usage.five_hour), week = usage && usageWin(usage.seven_day);
+  const top = Math.max(five ? five.pct : 0, week ? week.pct : 0);
+  b.className = `icon-btn usage-btn ${usage ? usageLevel(top) : ''}`;
+  b.title = t('usage.tip');
+  b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4.5 16a8 8 0 1 1 15 0M12 14l4-5"/><circle cx="12" cy="14" r="1.2"/></svg>' +
+    (usage ? `<span class="up">${num(Math.round(top))}%</span>` : '');
+  const m = $('usageMenu');
+  if (m.hidden) return;
+  const stale = usage && Date.now() - usage.ts > 3600e3;
+  m.innerHTML = usage
+    ? usageRow(t('usage.session'), five) + usageRow(t('usage.week'), week) +
+      `<div class="u-foot">${esc(t(stale ? 'usage.stale' : 'usage.updated', { ago: ago(usage.ts) }))}</div>`
+    : `<div class="u-foot" style="margin:0;padding:0;border:0">${t('usage.setup', { cmd: '<code>npx ccpreview usage install</code>' })}</div>`;
+}
+async function loadUsage() {
+  if (!SERVER || serverOff) return;
+  try { usage = await (await fetch('/api/usage')).json(); } catch (e) { return; }
+  renderUsage();
+}
+$('usageBtn').onclick = async (e) => {
+  e.stopPropagation();
+  const m = $('usageMenu');
+  if (!m.hidden) { m.hidden = true; return; }
+  m.hidden = false;
+  renderUsage();
+  const r = $('usageBtn').getBoundingClientRect();
+  m.style.top = Math.max(8, r.top - m.offsetHeight - 8) + 'px'; // the button sits at the bottom of the sidebar
+  m.style.left = Math.max(8, Math.min(isRtl() ? r.right - m.offsetWidth : r.left, innerWidth - m.offsetWidth - 8)) + 'px';
+  loadUsage();
+};
+document.addEventListener('click', (e) => { if (!e.target.closest('#usageMenu')) $('usageMenu').hidden = true; });
+setInterval(() => { if (document.visibilityState === 'visible') loadUsage(); }, 30000);
+setInterval(() => { if (usage) renderUsage(); }, 60000); // countdowns and a window that just reset
+
+// =====================================================================
 // content width (session panes)
 // =====================================================================
 function applyContentWidth() {
@@ -3128,6 +3188,7 @@ function restorePanes(restoring) {
   renderThumbs();
   applyContentWidth();
   renderNotifyBtn();
+  loadUsage();
   syncDateUi();
   renderGroupBtn();
   restorePanes(true);
