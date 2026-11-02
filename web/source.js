@@ -43,14 +43,47 @@
         return r.ok ? await r.json() : null;
       } catch (e) { return null; }
     }
+    // All live views share ONE EventSource (/api/mux): browsers allow ~6 connections per host, and a
+    // stream per pane would starve the sidebar's fetches. The server tags every message with our sid.
     open(ref, h) {
-      const qs = `dir=${encodeURIComponent(ref.dir)}&id=${encodeURIComponent(ref.id)}` + (ref.agent ? `&agent=${encodeURIComponent(ref.agent)}` : '');
-      const es = new EventSource('/api/stream?' + qs);
-      es.onopen = () => h.reset(); // the server replays the whole file on every (re)connect
-      es.onmessage = (e) => h.events(JSON.parse(e.data));
-      es.addEventListener('reset', () => h.reset());
-      es.addEventListener('ready', () => h.ready());
-      return { close: () => es.close() };
+      const sid = 's' + (this.nextSid = (this.nextSid || 0) + 1).toString(36);
+      if (!this.subs) this.subs = new Map();
+      this.subs.set(sid, { ref, h });
+      this.muxOpen();
+      if (this.cid) { h.reset(); this.muxSub(sid); } // else the pending hello resets and subscribes it
+      return {
+        close: () => {
+          if (!this.subs.delete(sid)) return;
+          if (this.cid && this.es) this.muxPost('unsub', { cid: this.cid, sid });
+          if (!this.subs.size && this.es) { this.es.close(); this.es = null; this.cid = null; }
+        },
+      };
+    }
+    muxOpen() {
+      if (this.es) return;
+      const es = (this.es = new EventSource('/api/mux'));
+      es.addEventListener('hello', (e) => {
+        if (this.es !== es) return;
+        this.cid = JSON.parse(e.data).cid;
+        // first connect, or the browser reconnected (new cid): the server replays the whole file per sub
+        for (const [sid, s] of [...this.subs]) { s.h.reset(); this.muxSub(sid); }
+      });
+      es.onmessage = (e) => {
+        const m = JSON.parse(e.data);
+        const s = this.subs.get(m.s);
+        if (!s) return;
+        if (m.t === 'events') s.h.events(m.d);
+        else if (m.t === 'reset') s.h.reset();
+        else if (m.t === 'ready') s.h.ready();
+      };
+      es.onerror = () => { if (this.es === es) this.cid = null; }; // subs wait for the next hello
+    }
+    muxSub(sid) {
+      const s = this.subs.get(sid);
+      if (s) this.muxPost('sub', { cid: this.cid, sid, dir: s.ref.dir, id: s.ref.id, agent: s.ref.agent || '' });
+    }
+    muxPost(kind, body) {
+      fetch('/api/mux/' + kind, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
     }
   }
 

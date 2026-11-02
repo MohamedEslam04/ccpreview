@@ -317,3 +317,156 @@ test('pending question: a subagent stream never carries it', async () => {
     fs.rmSync(file, { force: true });
   }
 });
+
+// ---------- /api/mux: many sessions over one SSE connection ----------
+function openMux() {
+  const mux = { cid: null, msgs: [], req: null };
+  let wake = () => {};
+  mux.ready = new Promise((resolve, reject) => {
+    mux.req = http.get({ host: '127.0.0.1', port, path: '/api/mux', headers: { Host: `127.0.0.1:${port}` } }, (res) => {
+      assert.strictEqual(res.statusCode, 200);
+      assert.match(res.headers['content-type'], /text\/event-stream/);
+      let buf = '';
+      res.on('data', (c) => {
+        buf += c;
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const hello = block.match(/^event: hello\ndata: (.*)$/);
+          if (hello) { mux.cid = JSON.parse(hello[1]).cid; resolve(mux); continue; }
+          const m = block.match(/^data: (.*)$/m);
+          if (m && !block.startsWith('event:')) mux.msgs.push(JSON.parse(m[1]));
+        }
+        wake();
+      });
+    });
+    mux.req.on('error', (e) => (e.code === 'ECONNRESET' ? null : reject(e)));
+  });
+  mux.until = (pred) => new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      if (pred()) { clearInterval(iv); resolve(); } else if (Date.now() - t0 > 5000) { clearInterval(iv); reject(new Error('timeout: ' + JSON.stringify(mux.msgs.map((m) => [m.s, m.t])))); }
+    }, 20);
+  });
+  mux.post = (kind, body, headers = {}) => request('POST', '/api/mux/' + kind, {
+    headers: { Origin: `http://127.0.0.1:${port}`, 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+  return mux;
+}
+const REF = { dir: '-home-me-demo', id: 'abc-123' };
+
+test('/api/mux: hello, then a sub replays events and signals ready tagged with its sid', async () => {
+  const mux = openMux();
+  await mux.ready;
+  try {
+    assert.match(mux.cid, /^[0-9a-f]{16}$/);
+    const r = await mux.post('sub', { cid: mux.cid, sid: 's1', ...REF });
+    assert.strictEqual(r.status, 200);
+    await mux.until(() => mux.msgs.some((m) => m.t === 'ready'));
+    assert.ok(mux.msgs.every((m) => m.s === 's1'));
+    const ev = mux.msgs.filter((m) => m.t === 'events').flatMap((m) => m.d);
+    assert.ok(ev.some((e) => e.k === 'user'));
+    assert.ok(ev.some((e) => e.text === 'done'));
+  } finally {
+    mux.req.destroy();
+  }
+});
+
+test('/api/mux/sub validates like /api/stream, and rejects unknown connections', async () => {
+  const mux = openMux();
+  await mux.ready;
+  try {
+    const sub = (o) => mux.post('sub', { cid: mux.cid, sid: 's1', ...REF, ...o });
+    assert.strictEqual((await sub({ dir: '..' })).status, 400);
+    assert.strictEqual((await sub({ id: '../../x' })).status, 400);
+    assert.strictEqual((await sub({ agent: '../x' })).status, 400);
+    assert.strictEqual((await sub({ dir: 5 })).status, 400);
+    assert.strictEqual((await sub({ sid: '' })).status, 400);
+    assert.strictEqual((await sub({ id: 'nope' })).status, 404);
+    assert.strictEqual((await sub({ cid: 'deadbeef' })).status, 404);
+    assert.strictEqual((await mux.post('unsub', { cid: 'deadbeef', sid: 's1' })).status, 404);
+    const bad = await request('POST', '/api/mux/sub', { headers: { Origin: `http://127.0.0.1:${port}` }, body: '{ nope' });
+    assert.strictEqual(bad.status, 400);
+  } finally {
+    mux.req.destroy();
+  }
+});
+
+test('/api/mux/sub and unsub refuse a foreign or missing Origin', async () => {
+  const mux = openMux();
+  await mux.ready;
+  try {
+    for (const kind of ['sub', 'unsub']) {
+      for (const Origin of ['https://evil.example', undefined]) {
+        const r = await request('POST', '/api/mux/' + kind, { headers: Origin ? { Origin } : {}, body: JSON.stringify({ cid: mux.cid, sid: 's1', ...REF }) });
+        assert.strictEqual(r.status, 403, `${kind} ${Origin}`);
+      }
+    }
+  } finally {
+    mux.req.destroy();
+  }
+});
+
+test('/api/mux: two subs on one connection each deliver tagged with their own sid; unsub stops one', async () => {
+  const sub = path.join(tmp, 'projects', '-home-me-demo', 'abc-123', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'agent-a1.jsonl'), JSON.stringify({ type: 'user', isSidechain: true, message: { role: 'user', content: 'task' } }) + '\n');
+  const mux = openMux();
+  await mux.ready;
+  try {
+    assert.strictEqual((await mux.post('sub', { cid: mux.cid, sid: 'a', ...REF })).status, 200);
+    assert.strictEqual((await mux.post('sub', { cid: mux.cid, sid: 'b', ...REF, agent: 'a1' })).status, 200);
+    await mux.until(() => ['a', 'b'].every((s) => mux.msgs.some((m) => m.s === s && m.t === 'ready')));
+    const texts = (s) => mux.msgs.filter((m) => m.s === s && m.t === 'events').flatMap((m) => m.d).map((e) => e.text);
+    assert.ok(texts('a').includes('done'));
+    assert.ok(!texts('b').includes('done'));
+    // unsub: a line appended to the file reaches the still-subscribed sid only
+    assert.strictEqual((await mux.post('sub', { cid: mux.cid, sid: 'd', ...REF })).status, 200);
+    await mux.until(() => mux.msgs.some((m) => m.s === 'd' && m.t === 'ready'));
+    assert.strictEqual((await mux.post('unsub', { cid: mux.cid, sid: 'a' })).status, 200);
+    mux.msgs.length = 0;
+    const file = path.join(tmp, 'projects', '-home-me-demo', 'abc-123.jsonl');
+    const orig = fs.readFileSync(file);
+    try {
+      fs.appendFileSync(file, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'appended' }] } }) + '\n');
+      await mux.until(() => mux.msgs.some((m) => m.s === 'd' && m.t === 'events' && m.d.some((e) => e.text === 'appended')));
+      assert.ok(!mux.msgs.some((m) => m.s === 'a'), 'nothing for a after unsub');
+    } finally {
+      fs.writeFileSync(file, orig);
+    }
+  } finally {
+    mux.req.destroy();
+  }
+});
+
+test('/api/mux: a sub with an existing sid replaces it and replays again; closing the connection drops the cid', async () => {
+  const mux = openMux();
+  await mux.ready;
+  const cid = mux.cid;
+  try {
+    await mux.post('sub', { cid, sid: 's1', ...REF });
+    await mux.until(() => mux.msgs.some((m) => m.t === 'ready'));
+    mux.msgs.length = 0;
+    await mux.post('sub', { cid, sid: 's1', ...REF });
+    await mux.until(() => mux.msgs.some((m) => m.t === 'ready'));
+    assert.ok(mux.msgs.some((m) => m.t === 'events' && m.d.some((e) => e.text === 'done')));
+  } finally {
+    mux.req.destroy();
+  }
+  await new Promise((r) => setTimeout(r, 100));
+  assert.strictEqual((await mux.post('sub', { cid, sid: 's1', ...REF })).status, 404);
+});
+
+test('/api/mux/sub caps subscriptions per connection', async () => {
+  const mux = openMux();
+  await mux.ready;
+  try {
+    for (let i = 0; i < 32; i++) assert.strictEqual((await mux.post('sub', { cid: mux.cid, sid: 'x' + i, ...REF })).status, 200);
+    assert.strictEqual((await mux.post('sub', { cid: mux.cid, sid: 'x32', ...REF })).status, 429);
+    assert.strictEqual((await mux.post('sub', { cid: mux.cid, sid: 'x0', ...REF })).status, 200, 'replacing is still fine');
+  } finally {
+    mux.req.destroy();
+  }
+});
