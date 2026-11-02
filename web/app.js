@@ -2646,7 +2646,7 @@ panesEl.addEventListener('dragstart', (e) => {
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData(PANE_DRAG, String(panes.indexOf(p)));
   e.dataTransfer.setDragImage(head, 20, 16);
-  setTimeout(() => p.el.classList.add('dragging'));
+  setTimeout(() => { if (dragPane === p) p.el.classList.add('dragging'); }); // after the browser took its drag image
 });
 panesEl.addEventListener('dragover', (e) => {
   if (!dragPane) return;
