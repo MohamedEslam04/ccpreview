@@ -946,12 +946,13 @@ let resizeTimer;
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { applyWidth(ui.sidew); renderThumbs(); }, 150); });
 
 // =====================================================================
-// Claude Code sessions (live), shown in up to 4 side-by-side panes
+// Claude Code sessions (live), shown side by side in panes (they wrap to more rows, drag a header to reorder)
 // =====================================================================
 const sess = { list: null };
 const sessList = $('sessList');
 const panesEl = $('panes');
-const MAX_PANES = 4;
+const MAX_PANES = 12;
+const MIN_PANE_W = 300; // narrower than this and a row takes one pane fewer
 let panes = [];
 let activePane = null;
 
@@ -1523,7 +1524,7 @@ class Pane {
     this.el = document.createElement('section');
     this.el.className = 'pane-v';
     this.el.innerHTML =
-      '<header class="phead"><span class="dot plive"></span>' +
+      '<header class="phead" draggable="true" data-i18n-title="pane.drag_tip"><span class="dot plive"></span>' +
       '<div class="vt"><div class="ptitle" dir="auto"></div><div class="pmeta"></div></div>' +
       `<button class="icon-btn" data-a="info" data-i18n-title="info.tip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>` +
       `<button class="icon-btn" data-a="search" data-i18n-title="pane.search_tip"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>` +
@@ -2591,8 +2592,21 @@ function updateGroup(g) {
 }
 
 // ---------- pane management ----------
+// How many columns a row gets: as many as fit at MIN_PANE_W (at most 4), spread evenly over the rows needed,
+// so 5 panes are 3 + 2 and not 4 + 1. More panes than fit make more rows; the area scrolls down.
+function paneCols(n, width) {
+  const fit = Math.max(1, Math.min(4, Math.floor(width / MIN_PANE_W)));
+  return Math.max(1, Math.ceil(n / Math.ceil(n / fit)));
+}
 function layoutPanes() {
+  const cols = paneCols(panes.length, panesEl.clientWidth || window.innerWidth);
   panesEl.dataset.n = panes.length;
+  panesEl.dataset.cols = cols;
+  panesEl.style.setProperty('--cols', cols);
+  // a last row with fewer panes than columns: its last pane takes the free slots instead of leaving a hole
+  panes.forEach((p) => { p.el.style.gridColumn = ''; });
+  const rem = panes.length % cols;
+  if (rem && panes.length > cols) panes[panes.length - 1].el.style.gridColumn = `span ${cols - rem + 1}`;
   panes.forEach((p) => p.el.classList.toggle('active', p === activePane && panes.length > 1));
 }
 function addPane() {
@@ -2603,8 +2617,68 @@ function addPane() {
   panesEl.insertBefore(p.el, panesEl.children[i] || null);
   p.renderEmpty();
   layoutPanes();
+  p.el.scrollIntoView({ block: 'nearest' }); // a pane that starts a new row below the fold
   return p;
 }
+new ResizeObserver(() => { if (panes.length) layoutPanes(); }).observe(panesEl);
+
+// ---------- drag a pane by its header to move it ----------
+const PANE_DRAG = 'application/x-ccpreview-pane';
+let dragPane = null;
+function dropSpot(e) {
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const over = el && el.closest('.pane-v');
+  const target = over && panes.find((p) => p.el === over);
+  if (!target || target === dragPane) return null;
+  const r = over.getBoundingClientRect();
+  const left = e.clientX < r.left + r.width / 2;
+  // "before" is the inline-start half: the right half in an RTL page
+  const rtl = getComputedStyle(panesEl).direction === 'rtl';
+  return { target, after: rtl ? left : !left };
+}
+function clearDrop() { panes.forEach((p) => p.el.classList.remove('drop-before', 'drop-after')); }
+panesEl.addEventListener('dragstart', (e) => {
+  const head = e.target.closest && e.target.closest('.phead');
+  const p = head && panes.find((x) => x.el === head.parentElement);
+  if (!p) return;
+  dragPane = p;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData(PANE_DRAG, String(panes.indexOf(p)));
+  e.dataTransfer.setDragImage(head, 20, 16);
+  setTimeout(() => p.el.classList.add('dragging'));
+});
+panesEl.addEventListener('dragover', (e) => {
+  if (!dragPane) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  clearDrop();
+  const spot = dropSpot(e);
+  if (spot) spot.target.el.classList.add(spot.after ? 'drop-after' : 'drop-before');
+  // rows below the fold: scroll while the pointer rests near the top or bottom edge
+  const r = panesEl.getBoundingClientRect();
+  if (e.clientY > r.bottom - 60) panesEl.scrollTop += 18;
+  else if (e.clientY < r.top + 60) panesEl.scrollTop -= 18;
+});
+panesEl.addEventListener('drop', (e) => {
+  if (!dragPane) return;
+  e.preventDefault();
+  const spot = dropSpot(e);
+  if (spot) {
+    panes.splice(panes.indexOf(dragPane), 1);
+    panes.splice(panes.indexOf(spot.target) + (spot.after ? 1 : 0), 0, dragPane);
+    panes.forEach((p) => panesEl.append(p.el)); // appending in order re-sorts the DOM
+    layoutPanes();
+    persistPanes();
+    dragPane.el.scrollIntoView({ block: 'nearest' });
+  }
+});
+document.addEventListener('dragend', () => {
+  if (!dragPane) return;
+  dragPane.el.classList.remove('dragging');
+  dragPane = null;
+  clearDrop();
+});
+
 function setActive(p) {
   if (activePane === p) return;
   activePane = p;
