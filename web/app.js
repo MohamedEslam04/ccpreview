@@ -246,6 +246,7 @@ function loadUi() {
   if (!Array.isArray(ui.closedAgents)) ui.closedAgents = [];
   if (!WIDTHS[ui.contentW]) ui.contentW = 'md';
   if (!Array.isArray(ui.panes)) ui.panes = [];
+  if (!Array.isArray(ui.vtabs)) ui.vtabs = [];
   if (!Array.isArray(ui.moreProj)) ui.moreProj = [];
   if (!Array.isArray(ui.pinned)) ui.pinned = [];
   if (ui.groupBy !== 'time') ui.groupBy = 'project';
@@ -536,7 +537,7 @@ $('srvBtn').onclick = async () => {
   state.pages[state.cur].html = ed.innerHTML;
   await persist();
   serverOff = true; // stop polling/streaming, or they would wake the socket-activated server again
-  panes.forEach((p) => { if (p.es) { p.es.close(); p.es = null; } });
+  allPanes().forEach((p) => { if (p.es) { p.es.close(); p.es = null; } });
   try { await fetch('/api/shutdown', { method: 'POST' }); } catch (e) {}
   setServerUi(false);
   setSave(t('save.browser'));
@@ -879,11 +880,12 @@ $('langBtn').onclick = () => {
   applyTheme();
   renderNotifyBtn();
   renderUsage();
+  renderTabs();
   renderGroupBtn();
   renderWidthMenu();
   setServerUi($('srvBtn').classList.contains('on'));
   renderThumbs();
-  restorePanes(true);
+  restoreTabs(true);
   setTab(ui.tab);
 };
 
@@ -930,7 +932,7 @@ function setTab(tab) {
   $('edWrap').hidden = tab !== 'pages';
   // nothing connected yet (hosted page): the setup guide takes the whole view, even if old panes were restored
   const setup = !SERVER && sourceState !== 'ready';
-  panesEl.hidden = tab !== 'sessions' || !panes.length || setup;
+  panesHost.hidden = tab !== 'sessions' || !panes.length || setup;
   $('vempty').hidden = tab !== 'sessions' || (panes.length > 0 && !setup);
   tblbar.hidden = true;
   updateBlank();
@@ -951,11 +953,36 @@ window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer
 // =====================================================================
 const sess = { list: null };
 const sessList = $('sessList');
-const panesEl = $('panes');
+const panesHost = $('panes'); // the whole preview area: tab bar + one grid of panes per tab
+const gridsEl = $('pgrids');
+const tabbarEl = $('tabbar');
+let panesEl = null; // the grid of the tab being shown
 const MAX_PANES = 12;
 const MIN_PANE_W = 300; // narrower than this and a row takes one pane fewer
-let panes = [];
+let panes = []; // the panes of the tab being shown (the same array as tabs[curTab].panes)
 let activePane = null;
+const MAX_TABS = 10;
+let tabs = []; // { panes, activePane, grid }: each tab is its own split layout; a tab with one pane is one full-size session
+let curTab = 0;
+const allPanes = () => tabs.flatMap((tb, i) => (i === curTab ? panes : tb.panes));
+function newTabObj() {
+  const grid = document.createElement('div');
+  grid.className = 'pgrid';
+  gridsEl.append(grid);
+  wireGrid(grid);
+  return { panes: [], activePane: null, grid };
+}
+function bindTab(i) {
+  curTab = i;
+  const tb = tabs[i];
+  panes = tb.panes;
+  activePane = tb.activePane;
+  panesEl = tb.grid;
+  tabs.forEach((x, j) => x.grid.classList.toggle('cur', j === i));
+}
+function saveCurTab() { if (tabs[curTab]) tabs[curTab].activePane = activePane; }
+tabs = [newTabObj()];
+bindTab(0);
 
 async function loadSessions() {
   if (!SRC.ready || serverOff) { renderSessions(); return; }
@@ -973,7 +1000,8 @@ async function loadSessions() {
   }
   renderSessions();
   renderEmptyView();
-  panes.forEach((p) => p.renderHead());
+  allPanes().forEach((p) => p.renderHead());
+  renderTabs();
 }
 
 // What the sidebar shows when there is nothing to read yet.
@@ -988,13 +1016,13 @@ function connectHtml() {
 
 const isLive = (ms) => Date.now() - ms < 90e3;
 const keyOf = (k) => (k ? `${k.dir}/${k.id}${k.agent ? '/' + k.agent : ''}` : '');
-const shown = (dir, id, agent) => panes.some((p) => p.key && p.key.dir === dir && p.key.id === id && (p.key.agent || '') === (agent || ''));
+const shown = (dir, id, agent) => allPanes().some((p) => p.key && p.key.dir === dir && p.key.id === id && (p.key.agent || '') === (agent || ''));
 function findSession(dir, id) {
   for (const p of sess.list || []) if (p.dir === dir) for (const s of p.sessions) if (s.id === id) return { p, s };
   return null;
 }
 function agentsOpen(s) {
-  if (panes.some((p) => p.key && p.key.id === s.id && p.key.agent)) return true;
+  if (allPanes().some((p) => p.key && p.key.id === s.id && p.key.agent)) return true;
   if (ui.openAgents.includes(s.id)) return true;
   return s.agents.some((a) => isLive(a.mtime)) && !ui.closedAgents.includes(s.id);
 }
@@ -1003,6 +1031,7 @@ function liveCount() {
   return (sess.list || []).reduce((n, p) => n + p.sessions.filter((s) => now - s.mtime < 90e3).length, 0);
 }
 
+const TAB_ICON = '<svg viewBox="0 0 24 24"><path d="M3 8V6a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>';
 const SPLIT_ICON = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>';
 
 const PIN_ICON = '<svg viewBox="0 0 24 24"><path d="M12 17v5M8 3h8l-1 6 3 3v2H6v-2l3-3z"/></svg>';
@@ -1018,7 +1047,7 @@ const isPinned = (s) => (ui.pinned || []).includes(s.id);
 function matchesQuick(p, s, k) {
   if (k === 'live') return sessLive(s);
   if (k === 'asking') return s.state === 'asking';
-  if (k === 'open') return panes.some((x) => x.key && x.key.dir === p.dir && x.key.id === s.id);
+  if (k === 'open') return allPanes().some((x) => x.key && x.key.dir === p.dir && x.key.id === s.id);
   if (k === 'pinned') return isPinned(s);
   return true;
 }
@@ -1140,7 +1169,8 @@ function groupHead({ key, title, tip, avatar, count, rows, shut, isStatic, icon 
 
 function sessRow(p, s, now, withProject) {
   const act = activePane && activePane.key;
-  const splitBtn = `<button class="split-btn" data-split title="${esc(t('sessions.split_tip'))}">${SPLIT_ICON}</button>`;
+  const splitBtn = `<button class="split-btn tab-btn" data-tab title="${esc(t('sessions.tab_tip'))}">${TAB_ICON}</button>` +
+    `<button class="split-btn" data-split title="${esc(t('sessions.split_tip'))}">${SPLIT_ICON}</button>`;
   const agents = s.agents || [];
   const live = now - (s.active || s.mtime) < 90e3;
   const on = shown(p.dir, s.id, '');
@@ -1333,7 +1363,7 @@ function renderEmptyView() {
   if (!box.hidden) {
     box.innerHTML = `<div><h2>${t('sessions.pick_title')}</h2><p>${t('sessions.pick_text')}</p>` + liveQuickList() + '</div>';
   }
-  panes.forEach((p) => { if (!p.key) p.renderEmpty(); });
+  allPanes().forEach((p) => { if (!p.key) p.renderEmpty(); });
 }
 $('vempty').addEventListener('click', (e) => {
   const c = e.target.closest('[data-copy-text]');
@@ -1406,7 +1436,7 @@ sessList.addEventListener('click', (e) => {
     return;
   }
   const s = e.target.closest('.sess');
-  if (s) openIn(sessTarget(s), { newPane: !!e.target.closest('[data-split]') || e.ctrlKey || e.metaKey });
+  if (s) openIn(sessTarget(s), { newTab: !!e.target.closest('[data-tab]') || e.shiftKey, newPane: !!e.target.closest('[data-split]') || e.ctrlKey || e.metaKey });
 });
 sessList.addEventListener('auxclick', (e) => { // middle click = new pane
   const s = e.target.closest('.sess');
@@ -1598,7 +1628,7 @@ class Pane {
         o[opt.dataset.opt] = !o[opt.dataset.opt];
         ui.searchOpts = o;
         saveUi();
-        panes.forEach((p) => p.syncSearchOpts());
+        allPanes().forEach((p) => p.syncSearchOpts());
         this.scheduleSearch();
         return;
       }
@@ -1756,7 +1786,7 @@ class Pane {
     if (!b) return;
     if (b.dataset.nav === 'wide') {
       ui.railWide = !ui.railWide;
-      panes.forEach((p) => p.rail.classList.toggle('wide', ui.railWide));
+      allPanes().forEach((p) => p.rail.classList.toggle('wide', ui.railWide));
       saveUi();
       return;
     }
@@ -2621,8 +2651,6 @@ function addPane() {
   p.el.scrollIntoView({ block: 'nearest' }); // a pane that starts a new row below the fold
   return p;
 }
-new ResizeObserver(() => { if (panes.length) layoutPanes(); }).observe(panesEl);
-
 // ---------- drag a pane by its header to move it ----------
 const PANE_DRAG = 'application/x-ccpreview-pane';
 let dragPane = null;
@@ -2638,47 +2666,173 @@ function dropSpot(e) {
   return { target, after: rtl ? left : !left };
 }
 function clearDrop() { panes.forEach((p) => p.el.classList.remove('drop-before', 'drop-after')); }
-panesEl.addEventListener('dragstart', (e) => {
-  const head = e.target.closest && e.target.closest('.phead');
-  const p = head && panes.find((x) => x.el === head.parentElement);
-  if (!p) return;
-  dragPane = p;
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData(PANE_DRAG, String(panes.indexOf(p)));
-  e.dataTransfer.setDragImage(head, 20, 16);
-  setTimeout(() => { if (dragPane === p) p.el.classList.add('dragging'); }); // after the browser took its drag image
-});
-panesEl.addEventListener('dragover', (e) => {
-  if (!dragPane) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  clearDrop();
-  const spot = dropSpot(e);
-  if (spot) spot.target.el.classList.add(spot.after ? 'drop-after' : 'drop-before');
-  // rows below the fold: scroll while the pointer rests near the top or bottom edge
-  const r = panesEl.getBoundingClientRect();
-  if (e.clientY > r.bottom - 60) panesEl.scrollTop += 18;
-  else if (e.clientY < r.top + 60) panesEl.scrollTop -= 18;
-});
-panesEl.addEventListener('drop', (e) => {
-  if (!dragPane) return;
-  e.preventDefault();
-  const spot = dropSpot(e);
-  if (spot) {
-    panes.splice(panes.indexOf(dragPane), 1);
-    panes.splice(panes.indexOf(spot.target) + (spot.after ? 1 : 0), 0, dragPane);
-    panes.forEach((p) => panesEl.append(p.el)); // appending in order re-sorts the DOM
-    layoutPanes();
-    persistPanes();
-    dragPane.el.scrollIntoView({ block: 'nearest' });
-  }
-});
+function wireGrid(grid) {
+  new ResizeObserver(() => { if (grid === panesEl && panes.length) layoutPanes(); }).observe(grid);
+  grid.addEventListener('dragstart', (e) => {
+    const head = e.target.closest && e.target.closest('.phead');
+    const p = head && panes.find((x) => x.el === head.parentElement);
+    if (!p) return;
+    dragPane = p;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(PANE_DRAG, String(panes.indexOf(p)));
+    e.dataTransfer.setDragImage(head, 20, 16);
+    setTimeout(() => { if (dragPane === p) p.el.classList.add('dragging'); }); // after the browser took its drag image
+  });
+  grid.addEventListener('dragover', (e) => {
+    if (!dragPane) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    clearDrop();
+    const spot = dropSpot(e);
+    if (spot) spot.target.el.classList.add(spot.after ? 'drop-after' : 'drop-before');
+    // rows below the fold: scroll while the pointer rests near the top or bottom edge
+    const r = grid.getBoundingClientRect();
+    if (e.clientY > r.bottom - 60) grid.scrollTop += 18;
+    else if (e.clientY < r.top + 60) grid.scrollTop -= 18;
+  });
+  grid.addEventListener('drop', (e) => {
+    if (!dragPane) return;
+    e.preventDefault();
+    const spot = dropSpot(e);
+    if (spot) {
+      panes.splice(panes.indexOf(dragPane), 1);
+      panes.splice(panes.indexOf(spot.target) + (spot.after ? 1 : 0), 0, dragPane);
+      panes.forEach((p) => grid.append(p.el)); // appending in order re-sorts the DOM
+      layoutPanes();
+      persistPanes();
+      dragPane.el.scrollIntoView({ block: 'nearest' });
+    }
+  });
+}
 document.addEventListener('dragend', () => {
   if (!dragPane) return;
   dragPane.el.classList.remove('dragging');
   dragPane = null;
   clearDrop();
 });
+
+// ---------- tabs: each one is its own split layout (usually one session at full size) ----------
+const tabLead = (tb, i) => {
+  const ps = i === curTab ? panes : tb.panes;
+  const act = i === curTab ? activePane : tb.activePane;
+  return (act && act.key ? act : ps.find((p) => p.key)) || null;
+};
+function renderTabs() {
+  tabbarEl.hidden = tabs.length < 2;
+  if (tabs.length < 2) return;
+  tabbarEl.innerHTML = tabs.map((tb, i) => {
+    const ps = i === curTab ? panes : tb.panes;
+    const lead = tabLead(tb, i);
+    const title = lead ? lead.title || lead.key.id.slice(0, 8) : t('tab.new');
+    const live = ps.some((p) => p.el.querySelector('.plive.live'));
+    return `<div class="vtab${i === curTab ? ' cur' : ''}" draggable="true" data-i="${i}" title="${esc(title)}"><span class="dot${live ? ' live' : ''}"></span>` +
+      `<span class="vt-t" dir="${textDir(title)}">${esc(title)}</span>${ps.length > 1 ? `<span class="vt-n">${num(ps.length)}</span>` : ''}` +
+      `<button class="vt-x" data-close title="${esc(t('tab.close_tip'))}">${ICON.x}</button></div>`;
+  }).join('') + `<button class="vtab-add" data-add title="${esc(t('tab.add_tip'))}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
+  const cur = tabbarEl.querySelector('.vtab.cur');
+  if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function selectTab(i) {
+  if (i === curTab || !tabs[i]) return;
+  saveCurTab();
+  bindTab(i);
+  layoutPanes();
+  afterPaneChange();
+}
+function addTab(target) {
+  if (tabs.length >= MAX_TABS) { toast(t('tab.max', { n: MAX_TABS })); return null; }
+  saveCurTab();
+  tabs.splice(curTab + 1, 0, newTabObj()); // next to the current one, like a browser
+  bindTab(curTab + 1);
+  const p = new Pane();
+  panes.push(p);
+  panesEl.append(p.el);
+  activePane = p;
+  if (target) p.open(target); else p.renderEmpty();
+  layoutPanes();
+  afterPaneChange();
+  return p;
+}
+function closeTab(i) {
+  const tb = tabs[i];
+  if (!tb) return;
+  if (tabs.length === 1) { [...panes].forEach(closePane); return; } // the last tab just empties
+  const wasCur = i === curTab;
+  saveCurTab();
+  tb.panes.forEach((p) => p.destroy());
+  tb.grid.remove();
+  tabs.splice(i, 1);
+  bindTab(wasCur ? Math.min(i, tabs.length - 1) : i < curTab ? curTab - 1 : curTab);
+  paintHighlights();
+  layoutPanes();
+  afterPaneChange();
+}
+function moveTab(from, to) {
+  saveCurTab();
+  const cur = tabs[curTab];
+  const [m] = tabs.splice(from, 1);
+  tabs.splice(to, 0, m);
+  curTab = tabs.indexOf(cur);
+  persistPanes();
+}
+// go to the tab that holds this pane and make it the active one
+function focusPane(p) {
+  const i = tabs.findIndex((tb, j) => (j === curTab ? panes : tb.panes).includes(p));
+  if (i >= 0) selectTab(i);
+  setActive(p);
+}
+const sameKey = (p, k) => p.key && p.key.dir === k.dir && p.key.id === k.id && (p.key.agent || '') === (k.agent || '');
+let dragTab = -1;
+tabbarEl.addEventListener('click', (e) => {
+  if (e.target.closest('[data-add]')) { addTab(); return; }
+  const tab = e.target.closest('.vtab');
+  if (!tab) return;
+  if (e.target.closest('[data-close]')) closeTab(+tab.dataset.i);
+  else selectTab(+tab.dataset.i);
+});
+tabbarEl.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }); // no autoscroll cursor
+tabbarEl.addEventListener('auxclick', (e) => {
+  const tab = e.target.closest('.vtab');
+  if (tab && e.button === 1) { e.preventDefault(); closeTab(+tab.dataset.i); }
+});
+const clearTabDrop = () => tabbarEl.querySelectorAll('.vtab').forEach((x) => x.classList.remove('drop-before', 'drop-after', 'dragging'));
+tabbarEl.addEventListener('dragstart', (e) => {
+  const tab = e.target.closest && e.target.closest('.vtab');
+  if (!tab) return;
+  dragTab = +tab.dataset.i;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('application/x-ccpreview-tab', String(dragTab));
+  setTimeout(() => { if (dragTab >= 0) tab.classList.add('dragging'); });
+});
+// where a dragged tab would land: before or after the tab under the pointer (the end half is the left one in RTL)
+function tabSpot(e) {
+  const tab = e.target.closest && e.target.closest('.vtab');
+  if (!tab || +tab.dataset.i === dragTab) return null;
+  const r = tab.getBoundingClientRect();
+  const left = e.clientX < r.left + r.width / 2;
+  const rtl = getComputedStyle(tabbarEl).direction === 'rtl';
+  return { tab, i: +tab.dataset.i, after: rtl ? left : !left };
+}
+tabbarEl.addEventListener('dragover', (e) => {
+  if (dragTab < 0) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  clearTabDrop();
+  tabbarEl.querySelector(`.vtab[data-i="${dragTab}"]`)?.classList.add('dragging');
+  const sp = tabSpot(e);
+  if (sp) sp.tab.classList.add(sp.after ? 'drop-after' : 'drop-before');
+});
+tabbarEl.addEventListener('drop', (e) => {
+  if (dragTab < 0) return;
+  e.preventDefault();
+  const sp = tabSpot(e);
+  if (sp) {
+    let to = sp.i + (sp.after ? 1 : 0);
+    if (dragTab < to) to--; // the tab itself leaves its old slot first
+    if (to !== dragTab) moveTab(dragTab, to);
+  }
+});
+document.addEventListener('dragend', () => { if (dragTab >= 0) { dragTab = -1; clearTabDrop(); } });
 
 function setActive(p) {
   if (activePane === p) return;
@@ -2688,6 +2842,7 @@ function setActive(p) {
   renderSessions();
 }
 function closePane(p) {
+  if (panes.length === 1 && tabs.length > 1) { closeTab(curTab); return; } // a tab with nothing in it goes away
   const i = panes.indexOf(p);
   p.destroy();
   panes.splice(i, 1);
@@ -2698,6 +2853,11 @@ function closePane(p) {
 }
 // open a session/subagent in the active pane, or in a new pane next to it
 function openIn(target, opts = {}) {
+  if (opts.newTab && !opts.restoring) { addTab(target); return; }
+  if (!opts.newPane && !opts.restoring) { // already open in another tab: go there instead of opening it twice
+    const there = allPanes().find((x) => sameKey(x, target) && !panes.includes(x));
+    if (there) { focusPane(there); return; }
+  }
   let p = activePane;
   if (!p || (opts.newPane && p.key)) p = addPane();
   p.open(target, opts.restoring);
@@ -2712,8 +2872,15 @@ function afterPaneChange() {
   renderSessions();
 }
 function persistPanes() {
+  saveCurTab();
   ui.panes = panes.filter((p) => p.key).map((p) => ({ ...p.key, title: p.title }));
   ui.activePane = Math.max(0, panes.filter((p) => p.key).indexOf(activePane));
+  ui.vtabs = tabs.map((tb) => {
+    const ps = tb.panes.filter((p) => p.key);
+    return { panes: ps.map((p) => ({ ...p.key, title: p.title })), active: Math.max(0, ps.indexOf(tb.activePane)) };
+  });
+  ui.vtab = curTab;
+  renderTabs();
   writeHash();
   saveUi();
 }
@@ -2979,8 +3146,8 @@ function notify(p, s, what) {
   const n = new Notification(`${what}: ${s.title}`, { body: p.name, tag: `${s.id}:${s.state}`, silent: false });
   n.onclick = () => {
     window.focus();
-    const existing = panes.find((x) => x.key && x.key.id === s.id && !x.key.agent);
-    if (existing) { setActive(existing); setTab('sessions'); } else openIn({ dir: p.dir, id: s.id, title: s.title });
+    const existing = allPanes().find((x) => x.key && x.key.id === s.id && !x.key.agent);
+    if (existing) { focusPane(existing); setTab('sessions'); } else openIn({ dir: p.dir, id: s.id, title: s.title });
     n.close();
   };
 }
@@ -3155,17 +3322,43 @@ window.addEventListener('hashchange', () => {
   else setTab(ui.tab);
 });
 
-function restorePanes(restoring) {
-  panes.forEach((p) => p.destroy());
-  panes = [];
-  activePane = null;
-  (ui.panes || []).slice(0, MAX_PANES).forEach((k) => {
+// The panes of the tab being shown, from ui.panes (a changed URL hash lands here).
+function fillPanes(keys, restoring) {
+  keys.slice(0, MAX_PANES).forEach((k) => {
     const p = new Pane();
     panes.push(p);
     panesEl.append(p.el);
     p.open(k, restoring);
   });
+}
+function restorePanes(restoring) {
+  panes.forEach((p) => p.destroy());
+  panes.length = 0;
+  activePane = null;
+  fillPanes(ui.panes || [], restoring);
   activePane = panes[ui.activePane] || panes[0] || null;
+  layoutPanes();
+  persistPanes();
+}
+// All tabs, as saved. The URL (ui.panes) is the tab being shown, so it wins over the saved copy of that tab.
+function restoreTabs(restoring) {
+  tabs.forEach((tb) => { tb.panes.forEach((p) => p.destroy()); tb.grid.remove(); });
+  tabs = [];
+  let saved = (ui.vtabs || []).filter((tb) => tb && Array.isArray(tb.panes) && tb.panes.length);
+  let cur = Math.max(0, Math.min(ui.vtab || 0, (ui.vtabs || []).length - 1));
+  // empty tabs were not kept: move the position of the shown one down by the empty ones before it
+  cur = Math.max(0, Math.min(saved.length - 1, cur - (ui.vtabs || []).slice(0, cur).filter((tb) => !tb || !tb.panes || !tb.panes.length).length));
+  saved = saved.slice(0, MAX_TABS);
+  if (!saved.length) { saved = [{ panes: ui.panes || [], active: ui.activePane || 0 }]; cur = 0; }
+  else saved[cur] = { panes: ui.panes && ui.panes.length ? ui.panes : saved[cur].panes, active: ui.activePane || 0 };
+  saved.forEach((sv, i) => {
+    tabs.push(newTabObj());
+    bindTab(i);
+    fillPanes(sv.panes, restoring);
+    activePane = panes[sv.active] || panes[0] || null;
+    saveCurTab();
+  });
+  bindTab(Math.min(cur, tabs.length - 1));
   layoutPanes();
   persistPanes();
 }
@@ -3191,7 +3384,7 @@ function restorePanes(restoring) {
   loadUsage();
   syncDateUi();
   renderGroupBtn();
-  restorePanes(true);
+  restoreTabs(true);
   setTab(ui.tab);
   if (ui.tab === 'pages') ed.focus({ preventScroll: true });
   loadSessions();
