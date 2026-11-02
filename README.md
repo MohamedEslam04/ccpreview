@@ -49,7 +49,7 @@ npx ccpreview
 ### Background commands and watchers
 - A Background bar per session lists every command Claude left running (`run_in_background` Bash calls and Monitor watchers) with its state: running, done, failed or stopped.
 - Click one for the full command, the files it writes and reads (taken from the command text, so a path held in a variable is missed), and the live tail of its output (the last 64 KB, refreshed every two seconds while it runs).
-- The output comes from the file Claude Code writes under your temp folder (`claude-<uid>/<project>/<session>/tasks/<task>.output`), `npx ccpreview` reads it for you. On the hosted page the Background view asks you once to choose that folder (it shows the exact path, usually `/tmp/claude-<uid>`); the access is read-only and the browser remembers it. Long lists fold and filter like the subagents bar.
+- The output comes from the file Claude Code writes under your temp folder (`claude-<uid>/<project>/<session>/tasks/<task>.output`). `npx ccpreview` reads it for you. On the hosted page the Background view asks you once to choose that folder (it shows the exact path, usually `/tmp/claude-<uid>`); the access is read-only and the browser remembers it. Long lists fold and filter like the subagents bar.
 
 ### Session info
 Press `i` or the info button for a panel with:
@@ -98,6 +98,15 @@ If you pick `~/.claude` (or your home folder) instead of `~/.claude/projects`, c
 
 Firefox and Safari do not support folder access. Use `npx ccpreview` there.
 
+Three features read files outside `~/.claude/projects`. On the hosted page each one asks you once to choose its folder (the page shows the path), read-only, and the browser remembers it. All of it is optional:
+
+| Feature | Folder to choose | With `npx ccpreview` |
+| --- | --- | --- |
+| Live output of background commands | the temp folder Claude Code writes it to, usually `/tmp/claude-<uid>` | automatic |
+| Plan usage gauge | `~/.ccpreview` (needs the [statusline tap](#optional-usage-limits)) | automatic |
+| Questions waiting for you | `~/.ccpreview` (needs the [hook](#optional-see-questions-while-they-wait)) | automatic |
+| Git status in the info panel | not possible: a web page cannot run git | yes |
+
 Special setups:
 
 - **WSL**: if Claude Code runs inside WSL, your sessions live in Linux. Either run `npx ccpreview` inside WSL and open the link it prints in your Windows browser, or in the hosted page pick `\\wsl.localhost\<distro>\home\<you>\.claude`.
@@ -111,7 +120,7 @@ Special setups:
 - Session ids and folder names are validated against a strict pattern, so `..` and hidden folders are rejected. Static files come from a fixed list.
 - `GET /api/task` (a background command's output) never takes a path from the page: the server finds the file from the session id and task id, reads only regular files (symlinks are refused), and sends at most the last 64 KB.
 - Nothing is uploaded. There is no analytics, no telemetry and no external request, in either mode.
-- Folder mode requests read-only access. The hosted page never writes to your folder.
+- Folder mode requests read-only access, only to the folders you choose (the projects folder, and optionally the temp folder with command output and `~/.ccpreview`). The hosted page never writes to them.
 - Notes are stored in `~/.ccpreview/pages.json` in server mode (with daily backups in `~/.ccpreview/backups`, the last 14 kept) and in the browser's `localStorage` in folder mode.
 - The optional hook (off unless you run `ccpreview hook install`) writes only under `~/.ccpreview` and to your `settings.json`, as described above.
 - Transcripts can contain secrets and source code. Do not expose the server to a network.
@@ -251,4 +260,4 @@ ccpreview is an independent project and is not affiliated with or endorsed by An
 
 ---
 
-Docs synced to commit 6b262f7 ("feat(viewer): show background commands and watchers with live output; filter long chip strips", 2026-11-02).
+Docs synced to commit a345988 ("feat(viewer): usage, waiting questions and background output on the hosted page", 2026-11-02).
