@@ -49,17 +49,15 @@ let ui = { tab: 'sessions', sess: null, panes: [], activePane: 0, sidew: DEFAULT
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-// Paragraph direction from what most of the text is written in, ignoring links and code.
-// dir="auto" only looks at the first strong character, so "https://… then an Arabic sentence"
-// rendered left-to-right. Returns "rtl", "ltr" or "auto" (no letters at all).
-function textDir(src) {
-  const t = String(src || '').replace(/`[^`]*`/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[\w.-]+\/[\w./-]+/g, ' ');
-  // Compare letters: a sentence built around English phrases with a few Arabic connectives is an English
-  // paragraph (about 35-40% Arabic letters), while real Arabic prose with English terms sits at 65% or more.
-  const ar = (t.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]+/g) || []).join('').length;
-  const la = (t.match(/[A-Za-z\u00C0-\u024F]+/g) || []).join('').length;
-  if (!ar && !la) return 'auto';
-  return ar >= la * 0.8 ? 'rtl' : 'ltr';
+const textDir = (src) => CCPreviewCore.textDir(src);
+// A <pre>: code stays left-to-right; a mostly-Arabic block gets a direction per line. Each line is its
+// own block (ending in its own newline), so copying keeps the line breaks.
+function preHtml(text, cls) {
+  const dirs = CCPreviewCore.preDirs(text);
+  const c = (rtl) => { const l = [rtl ? 'rtl-pre' : '', cls || ''].filter(Boolean).join(' '); return l ? ` class="${l}"` : ''; };
+  if (!dirs) return `<pre dir="ltr"${c(false)}><code>${esc(text)}</code></pre>`;
+  const lines = String(text).split('\n');
+  return `<pre dir="rtl"${c(true)}><code>${lines.map((l, j) => `<span class="cl" dir="${dirs[j]}">${esc(l)}\n</span>`).join('')}</code></pre>`;
 }
 function toast(msg) {
   const t = $('toast');
@@ -392,7 +390,7 @@ function md(src) {
       i++;
       while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
       i++;
-      out.push(`<pre dir="ltr"><code>${esc(code.join('\n'))}</code></pre>`);
+      out.push(preHtml(code.join('\n')));
       continue;
     }
     if (isBox(l)) {
@@ -2548,7 +2546,7 @@ class Pane {
       if (ev.k === 'result') {
         const tl = this.tools[ev.id];
         if (tl) {
-          tl.querySelector('.res').innerHTML = ev.text ? `<pre dir="auto"${ev.err ? ' class="err"' : ''}>${esc(ev.text)}</pre>` : '';
+          tl.querySelector('.res').innerHTML = ev.text ? preHtml(ev.text, ev.err ? 'err' : '') : '';
           if (ev.images) {
             // screenshots stay visible under the (collapsed) tool group
             const g = tl.closest('details.tools');
@@ -2595,7 +2593,7 @@ class Pane {
         const d = ev.diff ? diffHtml(ev.diff) : null;
         t.innerHTML = `<summary><span class="st-ico"><span class="spin"></span></span><span class="t-name">${esc(ev.name)}</span>` +
           `<span class="t-sum" dir="auto">${esc(ev.sum)}</span>${d ? d.stat : ''}</summary>` +
-          (d ? d.body : `<pre dir="ltr">${esc(ev.input)}</pre>`) + '<div class="res"></div>';
+          (d ? d.body : preHtml(ev.input)) + '<div class="res"></div>';
         if (ev.todos) { this.todos = ev.todos; this.renderPin(); }
         if (ev.plan) { this.plan = ev.plan; this.renderPin(); }
         g.querySelector('.tlist').append(t);

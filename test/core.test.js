@@ -656,3 +656,32 @@ test('parseUsage: clamped numbers only, null when nothing usable', () => {
   assert.strictEqual(core.parseUsage({ five_hour: null }), null);
   assert.strictEqual(core.parseUsage(undefined), null);
 });
+
+test('textDir: follows the language most of the text is written in', () => {
+  assert.strictEqual(core.textDir('كتبت 8 خطط في الفولدر'), 'rtl');
+  assert.strictEqual(core.textDir('Write the plan, ثم نفذ'), 'ltr');
+  assert.strictEqual(core.textDir('https://example.com/a/b then عشان كده الكلام ده عربي بالكامل'), 'rtl');
+  assert.strictEqual(core.textDir('see `الملف` and src/app.js now'), 'ltr');
+  assert.strictEqual(core.textDir('123 --- ...'), 'auto');
+  assert.strictEqual(core.textDir(null), 'auto');
+});
+
+test('preDirs: code and English blocks stay left-to-right (null)', () => {
+  assert.strictEqual(core.preDirs('const a = 1;\nfoo(); // تعليق'), null);
+  assert.strictEqual(core.preDirs('npx ccpreview'), null);
+  assert.strictEqual(core.preDirs(''), null);
+});
+
+test('preDirs: a mostly-Arabic block gets a direction per line', () => {
+  const text = [
+    'شغّل الفيديو بالصوت.',
+    '',
+    '• لما Claude يسأل question ردك', // some Arabic, more English words: still right-to-left
+    'جرّبها بسطر واحد:',
+    'npx ccpreview', // only Latin: left-to-right
+    '',
+    'https://mohamedeslam04.github.io/ccpreview/',
+    '---', // symbols only: follows the block
+  ].join('\n');
+  assert.deepStrictEqual(core.preDirs(text), ['rtl', 'rtl', 'rtl', 'rtl', 'ltr', 'rtl', 'ltr', 'rtl']);
+});

@@ -453,8 +453,32 @@
   // A plan waiting for approval keeps its own card: the transcript only lists it as a tool call.
   const pendingInTranscript = (p, unanswered) => !!(p && p.tool === 'AskUserQuestion' && p.id && unanswered.has(p.id));
 
+  // Paragraph direction from what most of the text is written in, ignoring links and code.
+  // dir="auto" only looks at the first strong character, so "https://… then an Arabic sentence"
+  // rendered left-to-right. Returns "rtl", "ltr" or "auto" (no letters at all).
+  const textDir = (src) => {
+    const t = String(src || '').replace(/`[^`]*`/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[\w.-]+\/[\w./-]+/g, ' ');
+    // Compare letters: a sentence built around English phrases with a few Arabic connectives is an English
+    // paragraph (about 35-40% Arabic letters), while real Arabic prose with English terms sits at 65% or more.
+    const ar = (t.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]+/g) || []).join('').length;
+    const la = (t.match(/[A-Za-z\u00C0-\u024F]+/g) || []).join('').length;
+    if (!ar && !la) return 'auto';
+    return ar >= la * 0.8 ? 'rtl' : 'ltr';
+  };
+
+  // Per-line directions for the text of a <pre>, or null when the block is code / English and stays
+  // left-to-right. A block that is mostly Arabic (a post draft, a message to copy) reads right-to-left:
+  // a line with any Arabic stays right-to-left (a few English words don't flip it), a line of only Latin
+  // text (a command, a URL) goes left-to-right, and blank or symbol-only lines follow the block.
+  const AR_LETTER = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/;
+  const preDirs = (text) => {
+    const lines = String(text).split('\n');
+    if (textDir(lines.join(' ')) !== 'rtl') return null;
+    return lines.map((l) => (AR_LETTER.test(l) || !/[A-Za-z]/.test(l) ? 'rtl' : 'ltr'));
+  };
+
   return {
     PER_PROJECT, EDGE_BYTES, META_CONCURRENCY, META_V, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
-    updateMeta, listSessions, cmdPaths, locateTasks, parsePending, parseUsage, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript,
+    updateMeta, listSessions, cmdPaths, locateTasks, parsePending, parseUsage, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript, textDir, preDirs,
   };
 });
