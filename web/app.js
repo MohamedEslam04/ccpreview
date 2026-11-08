@@ -32,6 +32,8 @@ const ICON = {
   chevDown: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
   chevUp: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  wrap: '<svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h13a3 3 0 0 1 0 6h-4m0 0 2-2m-2 2 2 2M3 18h4"/></svg>',
+  flip: '<svg viewBox="0 0 24 24"><path d="M4 8h15m0 0-4-4m4 4-4 4M20 16H5m0 0 4-4m-4 4 4 4"/></svg>',
   page: '<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 12v6M9 15h6"/></svg>',
   auto: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
   sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
@@ -59,6 +61,33 @@ function preHtml(text, cls) {
   const lines = String(text).split('\n');
   return `<pre dir="rtl"${c(true)}><code>${lines.map((l, j) => `<span class="cl" dir="${dirs[j]}">${esc(l)}\n</span>`).join('')}</code></pre>`;
 }
+// A fenced code block: a slim header with the language and the options (wrap long lines, flip the
+// direction when the guess is wrong, copy), then the <pre>. Clicks are handled by one listener on document.
+function codeBlock(code, lang) {
+  const l = String(lang || '').replace(/[^\w+#.-]/g, '').slice(0, 20);
+  const wraps = !!CCPreviewCore.preDirs(code); // an Arabic block already wraps
+  const btn = (act, ico) => `<button class="icon-btn${act === 'wrap' && wraps ? ' on' : ''}" data-cb="${act}" title="${esc(t('code.' + act + '_tip'))}" aria-label="${esc(t('code.' + act + '_tip'))}">${ICON[ico]}</button>`;
+  return `<div class="cb"><div class="cb-head" contenteditable="false"><span class="cb-lang">${esc(l)}</span>` +
+    `<span class="cb-btns">${btn('wrap', 'wrap')}${btn('flip', 'flip')}${btn('copy', 'copy')}</span></div>${preHtml(code)}</div>`;
+}
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-cb]');
+  if (!b) return;
+  const cb = b.closest('.cb'), pre = cb.querySelector('pre');
+  if (b.dataset.cb === 'copy') {
+    const ok = await copyText(pre.textContent.replace(/\n$/, ''));
+    toast(ok ? t('code.copied') : t('copy.failed'));
+    if (ok) { b.innerHTML = ICON.check; setTimeout(() => { b.innerHTML = ICON.copy; }, 1200); }
+  } else if (b.dataset.cb === 'wrap') {
+    const on = cb.dataset.wrap ? cb.dataset.wrap === '1' : pre.classList.contains('rtl-pre');
+    cb.dataset.wrap = on ? '0' : '1';
+    b.classList.toggle('on', !on);
+  } else if (b.dataset.cb === 'flip') {
+    const orig = pre.getAttribute('dir'), cur = cb.dataset.flip || orig, next = cur === 'rtl' ? 'ltr' : 'rtl';
+    if (next === orig) delete cb.dataset.flip; else cb.dataset.flip = next;
+    b.classList.toggle('on', next !== orig);
+  }
+});
 function toast(msg) {
   const t = $('toast');
   t.hidden = true;
@@ -344,9 +373,25 @@ function mdList(lines, i) {
   while (i < lines.length) {
     const l = lines[i];
     const m = l.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
-    if (m && !isHr(l)) { items.push({ ind: m[1].length, ord: /\d/.test(m[2]), start: parseInt(m[2], 10), text: m[3] }); i++; continue; }
-    if (l.trim() && /^\s+/.test(l) && items.length) { items[items.length - 1].text += '\n' + l.trim(); i++; continue; }
-    if (!l.trim() && i + 1 < lines.length && isListLine(lines[i + 1])) { i++; continue; }
+    if (m && !isHr(l)) { items.push({ ind: m[1].length, ord: /\d/.test(m[2]), start: parseInt(m[2], 10), text: m[3], parts: [{ lines: [m[3]] }] }); i++; continue; }
+    const fence = items.length && l.match(/^(\s+)```\s*([\w+#.-]*)/);
+    if (fence) {
+      // an indented fenced block belongs to the item above it
+      const code = [], strip = fence[1].length;
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++].replace(new RegExp(`^\\s{0,${strip}}`), ''));
+      i++;
+      items[items.length - 1].parts.push({ code: code.join('\n'), lang: fence[2] });
+      continue;
+    }
+    if (l.trim() && /^\s+/.test(l) && items.length) {
+      const it = items[items.length - 1], last = it.parts[it.parts.length - 1];
+      it.text += '\n' + l.trim();
+      if (last.lines) last.lines.push(l.trim()); else it.parts.push({ lines: [l.trim()] });
+      i++;
+      continue;
+    }
+    if (!l.trim() && i + 1 < lines.length && (isListLine(lines[i + 1]) || (items.length && /^\s+```/.test(lines[i + 1])))) { i++; continue; }
     break;
   }
   let html = '';
@@ -361,7 +406,7 @@ function mdList(lines, i) {
     } else {
       html += '</li>';
     }
-    html += `<li dir="${textDir(it.text)}">` + it.text.split('\n').map(inline).join('<br>');
+    html += `<li dir="${textDir(it.text)}">` + it.parts.map((p) => (p.code !== undefined ? codeBlock(p.code, p.lang) : p.lines.map(inline).join('<br>'))).join('');
   });
   while (stack.length) html += '</li></' + stack.pop().tag + '>';
   return { html, i };
@@ -387,10 +432,11 @@ function md(src) {
     if (!l.trim()) { i++; continue; }
     if (/^\s*```/.test(l)) {
       const code = [];
+      const lang = l.replace(/^\s*```\s*/, '');
       i++;
       while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
       i++;
-      out.push(preHtml(code.join('\n')));
+      out.push(codeBlock(code.join('\n'), lang));
       continue;
     }
     if (isBox(l)) {
@@ -2360,7 +2406,7 @@ class Pane {
     const LIMIT = 5000;
     for (const root of roots) {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode: (n) => (n.parentElement.closest('.msg-actions,.who,button,.vskel,.ri-n') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+        acceptNode: (n) => (n.parentElement.closest('.msg-actions,.who,button,.vskel,.ri-n,.cb-head') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
       });
       while (walker.nextNode() && this.hits.length < LIMIT) {
         const node = walker.currentNode, text = node.nodeValue;
