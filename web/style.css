@@ -214,8 +214,8 @@
   pre { font-family: var(--mono); background: var(--code); padding: 12px 16px; border-radius: var(--r); overflow-x: auto; font-size: 13px; line-height: 1.6; text-align: left; border: 1px solid var(--line-soft); }
   pre code { background: none; padding: 0; font-size: inherit; }
   /* fenced code block: header with language + options, then the code */
-  .cb { margin: 12px 0; border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--code); overflow: hidden; }
-  .cb-head { display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 2px 6px; border-bottom: 1px solid var(--line-soft); }
+  .cb { margin: 12px 0; border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--code); overflow: clip; } /* clip, not hidden: hidden would stop the header from sticking */
+  .cb-head { position: sticky; top: var(--pin-h, 0px); z-index: 1; background: var(--code); display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 2px 6px; border-bottom: 1px solid var(--line-soft); }
   .cb-lang { flex: 1; min-width: 0; padding-inline-start: 6px; font: 11px/1 var(--mono); color: var(--faint); text-align: start; unicode-bidi: isolate; }
   .cb-btns { display: flex; gap: 2px; margin-inline-start: auto; }
   .cb-head .icon-btn { width: 26px; height: 26px; }

@@ -1690,6 +1690,9 @@ class Pane {
     this.q = (s) => this.el.querySelector(s);
     this.scroll = this.q('.pscroll');
     this.body = this.q('.pbody');
+    // code block headers stick below the pinned plan / todos bar, whatever height it has right now
+    const pin = this.q('.ppin');
+    new ResizeObserver(() => this.scroll.style.setProperty('--pin-h', pin.offsetHeight + 'px')).observe(pin);
     this.reset();
 
     this.el.addEventListener('pointerdown', () => setActive(this), true);
