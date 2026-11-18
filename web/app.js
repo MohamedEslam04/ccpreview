@@ -356,7 +356,13 @@ function inline(s) {
   s = esc(s).replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
   s = s
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre, u) => {
+      // sentence punctuation after a bare URL is not part of the link
+      const tail = u.match(/(?:[.,:!?*_\]]|&quot;|&#39;|&gt;|(?<!&#?\w+);)+$/);
+      const trail = tail ? tail[0] : '';
+      if (trail) u = u.slice(0, -trail.length);
+      return `${pre}<a href="${u}" target="_blank" rel="noopener">${u}</a>${trail}`;
+    })
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
     .replace(/__([^_]+)__/g, '<b>$1</b>')
     .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<i>$2</i>')
