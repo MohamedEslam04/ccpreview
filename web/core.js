@@ -108,6 +108,8 @@
     // for the Background bar, since `sum` keeps only the first line of the description
     if ((b.name === 'Bash' && input.run_in_background === true) || b.name === 'Monitor') {
       ev.bg = { cmd: clip(input.command || '', MAX_INPUT), desc: String(input.description || ''), monitor: b.name === 'Monitor' };
+      // a watcher ends on its own after timeout_ms, unless it is persistent (both may come as strings)
+      if (b.name === 'Monitor') ev.bg.ttl = input.persistent === true || input.persistent === 'true' ? 0 : Number(input.timeout_ms) || 0;
     } else if ((b.name === 'TaskStop' || b.name === 'KillShell') && typeof (input.task_id || input.shell_id) === 'string') {
       ev.stop = input.task_id || input.shell_id;
     }
@@ -235,6 +237,43 @@
     }
     return { tasks, rest: text.trim() };
   }
+
+  // ---------- what a finished subagent left running ----------
+  // A subagent can end its turn ("waiting for the tests") while commands it started in the background still run:
+  // Claude Code then marks it finished, and nothing in its transcript will say when they end. `openBg(text)` lists
+  // the commands and watchers a transcript started and never saw end (no <task-notification>, no TaskStop);
+  // `bgRunning` then counts the ones still going at `now`: not exited (`exited(o)` reads the output file: true,
+  // false, or null when it can't tell), a watcher not past its timeout, and nothing older than BG_STALE (a
+  // Claude Code that quit takes its commands with it, and writes no exit line).
+  const BG_STALE = 6 * 3600e3;
+  const BG_HINT = /run_in_background|"name":"Monitor"|backgroundTaskId|"taskId"|task-notification|TaskStop|KillShell/;
+  function openBg(text) {
+    const bg = new Map();
+    const byTask = (id) => { for (const e of bg.values()) if (e.task === id) return e; return null; };
+    for (const l of String(text || '').split('\n')) {
+      if (!BG_HINT.test(l)) continue; // most lines can't matter: skip parsing them
+      for (const ev of convert(l, true, () => '')) {
+        if (ev.k === 'tool' && ev.bg) bg.set(ev.id, { task: '', sid: '', monitor: ev.bg.monitor, at: Date.parse(ev.ts) || 0, ttl: ev.bg.ttl || 0 });
+        else if (ev.k === 'result' && ev.task && bg.has(ev.id)) {
+          const e = bg.get(ev.id);
+          e.task = ev.task;
+          e.sid = ((ev.out || '').match(/([\w-]+)[\\/]tasks[\\/][\w-]+\.output$/) || [])[1] || ''; // the output folder's session
+        } else if (ev.k === 'task' && ev.taskId && ev.status) { const e = byTask(ev.taskId); if (e) e.ended = true; }
+        else if (ev.k === 'tool' && ev.stop) { const e = byTask(ev.stop); if (e) e.ended = true; }
+      }
+    }
+    return [...bg.values()].filter((e) => e.task && !e.ended).map(({ task, sid, monitor, at, ttl }) => ({ task, sid, monitor, at, ttl }));
+  }
+  async function bgRunning(open, now, exited) {
+    let n = 0;
+    for (const o of open) {
+      if (now - o.at > BG_STALE || (o.ttl && now - o.at > o.ttl)) continue;
+      if ((await exited(o)) !== true) n++;
+    }
+    return n;
+  }
+  // Claude Code appends this line to a background command's output file when the command ends
+  const exitedText = (text) => /\[exited with code -?\d+\]\s*$/.test(String(text || ''));
 
   // The files a shell command touches, for the Background view: `> f`, `>> f`, `tee f` write; `< f` and the file
   // arguments of tail / cat / grep & co read; any other path is only mentioned. A heuristic on the command text
@@ -414,6 +453,7 @@
           model: (a.info && a.info.model) || '', toolUseId: (a.info && a.info.toolUseId) || '', finished: !!(a.info && a.info.finished),
           worktree: (a.info && a.info.worktreePath) || '', worktreeBranch: (a.info && a.info.worktreeBranch) || '',
           background: !!(a.info && a.info.requestShape === 'background'),
+          bgRunning: a.bgRunning || 0, // background commands it left running after it finished (see openBg)
         })).sort((a, b) => a.born - b.born);
         const active = Math.max(f.mtime, ...agents.map((a) => a.mtime));
         return { id: f.id, mtime: f.mtime, size: f.size, active, title: m.title || m.prompt, cwd: m.cwd, agents, state: m.state || 'idle' };
@@ -479,6 +519,6 @@
 
   return {
     PER_PROJECT, EDGE_BYTES, META_CONCURRENCY, META_V, convert, toolEvent, toolSummary, textOf, cleanPrompt, stripReminders,
-    updateMeta, listSessions, cmdPaths, locateTasks, parsePending, parseUsage, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript, textDir, preDirs,
+    updateMeta, listSessions, cmdPaths, locateTasks, openBg, bgRunning, exitedText, BG_STALE, parsePending, parseUsage, edgeLines, mapLimit, packMeta, unpackMeta, splitLines, safeDir, safeId, basename, pendingInTranscript, textDir, preDirs,
   };
 });

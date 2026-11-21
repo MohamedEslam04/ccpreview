@@ -639,6 +639,7 @@
   .chip.pa.done .pa-st { color: var(--live); }
   .chip.pa.stopped .pa-st .dot { background: var(--faint); }
   .chip.pa.stopped { color: var(--muted); }
+  .chip.pa.bgrun { border-color: color-mix(in oklch, var(--live) 45%, var(--line)); border-style: dashed; }
   .chip.pa.busy { border-color: color-mix(in oklch, var(--live) 45%, var(--line)); background: color-mix(in oklch, var(--live) 8%, var(--raised)); }
   .chip.pa .spin { width: 10px; height: 10px; border-width: 1.5px; border-top-color: var(--live); }
   .chip.pa.cur { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); color: var(--fg); }

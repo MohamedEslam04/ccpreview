@@ -1297,7 +1297,8 @@ function sessRow(p, s, now, withProject) {
         const al = isLive(a.mtime);
         const aon = shown(p.dir, s.id, a.id);
         const name = a.description || 'subagent';
-        const meta = [a.type, a.model, al ? t('state.live_agent') : a.finished ? t('agents.finished_ago', { ago: ago(a.mtime) }) : ago(a.mtime)].filter(Boolean).join(' · ');
+        const meta = [a.type, a.model, al ? t('state.live_agent') : a.finished ? t('agents.finished_ago', { ago: ago(a.mtime) }) : ago(a.mtime),
+          a.bgRunning && tn('agents.bg_left', a.bgRunning, { n: num(a.bgRunning) })].filter(Boolean).join(' · ');
         return `<div class="sess agent${aon ? ' on' : ''}" data-dir="${esc(p.dir)}" data-id="${esc(s.id)}" data-agent="${esc(a.id)}" title="${esc(name)}">` +
           `<span class="dot${al ? ' live' : ''}"></span><div class="st"><div class="stt" dir="${textDir(name)}">${esc(name)}</div>` +
           `<div class="sm${al ? ' live' : ''}">${esc(meta)}</div></div><span class="row-acts">${splitBtn}</span></div>`;
@@ -2016,17 +2017,19 @@ class Pane {
     // subagents of this session, live ones first: click to open here, Ctrl+click for a new pane
     const agents = (s.agents || []).slice().sort((x, y) => (isLive(y.mtime) - isLive(x.mtime)) || (y.born - x.born));
     if (!agents.length) { bar.hidden = true; return; }
-    // Each subagent is: done (its meta says finished), running (not finished and active in the last 30 min;
-    // "live" when it wrote something in the last 90s, otherwise busy in a long command), or stopped.
-    const stateOf = (x) => (x.finished ? 'done' : isLive(x.mtime) ? 'live' : Date.now() - x.mtime < 30 * 60e3 ? 'busy' : 'stopped');
-    const isRunning = (x) => ['live', 'busy'].includes(stateOf(x));
+    // Each subagent is: done (its meta says finished), bgrun (finished its turn but left background commands running),
+    // running (not finished and active in the last 30 min; "live" when it wrote something in the last 90s, otherwise
+    // busy in a long command), or stopped.
+    const stateOf = (x) => (x.finished ? (x.bgRunning ? 'bgrun' : 'done') : isLive(x.mtime) ? 'live' : Date.now() - x.mtime < 30 * 60e3 ? 'busy' : 'stopped');
+    const isRunning = (x) => ['live', 'busy', 'bgrun'].includes(stateOf(x));
     const liveN = agents.filter(isRunning).length;
     const doneN = agents.filter((x) => stateOf(x) === 'done').length;
     const stoppedN = agents.length - liveN - doneN;
     const chip = (x) => {
       const st = stateOf(x);
-      const icon = st === 'done' ? ICON.check : st === 'busy' ? '<span class="spin"></span>' : `<span class="dot${st === 'live' ? ' live' : ''}"></span>`;
-      const tip = [x.description, x.type, x.model, `${t('agents.st.' + st)}${st === 'live' ? '' : ' · ' + t('agents.last', { ago: ago(x.mtime) })}`].filter(Boolean).join(' · ');
+      const icon = st === 'done' ? ICON.check : st === 'busy' || st === 'bgrun' ? '<span class="spin"></span>' : `<span class="dot${st === 'live' ? ' live' : ''}"></span>`;
+      const label = st === 'bgrun' ? tn('agents.st.bgrun', x.bgRunning, { n: num(x.bgRunning) }) : t('agents.st.' + st);
+      const tip = [x.description, x.type, x.model, `${label}${st === 'live' ? '' : ' · ' + t('agents.last', { ago: ago(x.mtime) })}`].filter(Boolean).join(' · ');
       return `<button class="chip pa ${st}${a && a.id === x.id ? ' cur' : ''}" data-agent="${esc(x.id)}" title="${esc(tip)}">` +
         `<span class="pa-st">${icon}</span><span class="pa-t" dir="auto">${esc(x.description || 'subagent')}</span>` +
         (x.type ? `<span class="pa-type">${esc(x.type)}</span>` : '') + '</button>';
@@ -2840,10 +2843,11 @@ function infoHtml(st, agent, sess, g, key) {
   h += gitRow(g, row);
   if (agent) {
     const flags = [agent.type && `<span class="ichip mono">${esc(agent.type)}</span>`, agent.background && chip(t('info.background')),
-      agent.worktree && chip(t('info.worktree')), agent.finished ? `<span class="ichip ok">${t('info.finished')}</span>` : `<span class="ichip live">${t('info.running')}</span>`].filter(Boolean);
+      agent.worktree && chip(t('info.worktree')), agent.finished ? `<span class="ichip ok">${t('info.finished')}</span>` : `<span class="ichip live">${t('info.running')}</span>`,
+      agent.bgRunning && `<span class="ichip live" title="${esc(t('info.bg_left_tip'))}">${tn('agents.bg_left', agent.bgRunning, { n: num(agent.bgRunning) })}</span>`].filter(Boolean);
     h += row(t('info.subagent'), flags.join(' '));
   } else if (sess && sess.agents && sess.agents.length) {
-    h += row(t('info.subagents'), `${num(sess.agents.length)} <small>${t('info.subs_running', { n: num(sess.agents.filter((x) => !x.finished).length) })}</small>`);
+    h += row(t('info.subagents'), `${num(sess.agents.length)} <small>${t('info.subs_running', { n: num(sess.agents.filter((x) => !x.finished || x.bgRunning).length) })}</small>`);
   }
   const tools = [...st.tools.entries()].sort((a, b) => b[1] - a[1]);
   const totalTools = tools.reduce((n, [, c]) => n + c, 0);

@@ -578,7 +578,12 @@ test('a Bash call with run_in_background carries its full command and descriptio
 
 test('a Monitor call is a background watcher with its command', () => {
   const [ev] = core.convert(asst({ type: 'tool_use', id: 'tu3', name: 'Monitor', input: { description: 'dev server restarts', command: 'tail -F app.log | grep FATAL', timeout_ms: 1800000 } }), false);
-  assert.deepStrictEqual(ev.bg, { cmd: 'tail -F app.log | grep FATAL', desc: 'dev server restarts', monitor: true });
+  assert.deepStrictEqual(ev.bg, { cmd: 'tail -F app.log | grep FATAL', desc: 'dev server restarts', monitor: true, ttl: 1800000 });
+  // a persistent watcher never expires on its own; the timeout may come as a string
+  const [p] = core.convert(asst({ type: 'tool_use', id: 'tu5', name: 'Monitor', input: { command: 'x', timeout_ms: '60000', persistent: 'true' } }), false);
+  assert.strictEqual(p.bg.ttl, 0);
+  const [q] = core.convert(asst({ type: 'tool_use', id: 'tu6', name: 'Monitor', input: { command: 'x', timeout_ms: '60000', persistent: 'false' } }), false);
+  assert.strictEqual(q.bg.ttl, 60000);
 });
 
 test('the result of a background start names the task (Bash: backgroundTaskId, Monitor: taskId)', () => {
@@ -684,4 +689,59 @@ test('preDirs: a mostly-Arabic block gets a direction per line', () => {
     '---', // symbols only: follows the block
   ].join('\n');
   assert.deepStrictEqual(core.preDirs(text), ['rtl', 'rtl', 'rtl', 'rtl', 'ltr', 'rtl', 'ltr', 'rtl']);
+});
+
+// ---------- a finished subagent can leave background commands running ----------
+
+const at = (iso, o) => line({ ...JSON.parse(o), timestamp: iso });
+const T0 = Date.parse('2026-11-21T03:40:00Z');
+const bgTranscript = [
+  at('2026-11-21T03:40:00Z', asst({ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'cargo test', run_in_background: true } })),
+  at('2026-11-21T03:40:01Z', toolResult('b1', 'Command running in background with ID: t1. Output is being written to: /tmp/claude-1/-p/sess-9/tasks/t1.output.', { backgroundTaskId: 't1' })),
+  at('2026-11-21T03:40:02Z', asst({ type: 'tool_use', id: 'b2', name: 'Bash', input: { command: 'cargo clippy', run_in_background: true } })),
+  at('2026-11-21T03:40:03Z', toolResult('b2', 'Command running in background with ID: t2. Output is being written to: /tmp/claude-1/-p/sess-9/tasks/t2.output.', { backgroundTaskId: 't2' })),
+  at('2026-11-21T03:40:04Z', asst({ type: 'tool_use', id: 'm1', name: 'Monitor', input: { command: 'until x; do sleep 5; done', timeout_ms: 1800000 } })),
+  at('2026-11-21T03:40:05Z', toolResult('m1', 'Monitor started (task t3, expires in 30m)', { taskId: 't3', timeoutMs: 1800000 })),
+  at('2026-11-21T03:40:06Z', asst({ type: 'tool_use', id: 'b3', name: 'Bash', input: { command: 'sleep 99', run_in_background: true } })),
+  at('2026-11-21T03:40:07Z', toolResult('b3', 'Command running in background with ID: t4. Output is being written to: /tmp/claude-1/-p/sess-9/tasks/t4.output.', { backgroundTaskId: 't4' })),
+  at('2026-11-21T03:41:00Z', queued(notif({ 'task-id': 't2', status: 'completed', summary: 'done' }))),
+  at('2026-11-21T03:41:01Z', asst({ type: 'tool_use', id: 's1', name: 'TaskStop', input: { task_id: 't4' } })),
+  at('2026-11-21T03:41:02Z', asst({ type: 'tool_use', id: 'b9', name: 'Bash', input: { command: 'never answered', run_in_background: true } })),
+  at('2026-11-21T03:41:03Z', asst({ type: 'text', text: 'Waiting for the test run to complete.' })),
+].join('\n') + '\n';
+
+test('openBg: background commands and watchers a transcript started and never saw end', () => {
+  const open = core.openBg(bgTranscript);
+  assert.deepStrictEqual(open, [
+    { task: 't1', sid: 'sess-9', monitor: false, at: Date.parse('2026-11-21T03:40:00Z'), ttl: 0 },
+    { task: 't3', sid: '', monitor: true, at: Date.parse('2026-11-21T03:40:04Z'), ttl: 1800000 },
+  ]); // t2 notified, t4 stopped, b9 never got a task id
+  assert.deepStrictEqual(core.openBg(''), []);
+});
+
+test('bgRunning: an exit line, an expired watcher or a stale start ends a command', async () => {
+  const open = core.openBg(bgTranscript);
+  const none = async () => null;
+  assert.strictEqual(await core.bgRunning(open, T0 + 5 * 60e3, none), 2);
+  // the output file ended with "[exited with code 0]"
+  assert.strictEqual(await core.bgRunning(open, T0 + 5 * 60e3, async (o) => o.task === 't1'), 1);
+  // the 30 min watcher expired; the command is still unknown
+  assert.strictEqual(await core.bgRunning(open, T0 + 31 * 60e3, none), 1);
+  // nothing counts as running after BG_STALE
+  assert.strictEqual(await core.bgRunning(open, T0 + core.BG_STALE + 60e3, none), 0);
+  assert.strictEqual(await core.bgRunning([], T0, none), 0);
+});
+
+test('exitedText: the line Claude Code appends to a background output file when the command ends', () => {
+  assert.strictEqual(core.exitedText('compiling\n[exited with code 0]\n'), true);
+  assert.strictEqual(core.exitedText('error\n[exited with code 101]'), true);
+  assert.strictEqual(core.exitedText('still compiling'), false);
+  assert.strictEqual(core.exitedText(''), false);
+});
+
+test('listSessions: a subagent carries how many background commands it left running', async () => {
+  const ad = memAdapter({ p: { s: { mtime: 1, lines: [userLine('hi')], agents: [
+    { id: 'a', mtime: 1, born: 1, info: { finished: true }, bgRunning: 2 }, { id: 'b', mtime: 1, born: 2, info: {} }] } } });
+  const [p] = await core.listSessions(ad, new Map());
+  assert.deepStrictEqual(p.sessions[0].agents.map((a) => a.bgRunning), [2, 0]);
 });

@@ -160,6 +160,8 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
       this.metaCache = new Map();
       this.imgs = new Map();
       this.agentBorn = new Map();
+      this.bgScans = new Map(); // subagent -> { sig, open }: what its transcript started and never saw end
+      this.bgEnded = new Set();
       this.chain = Promise.resolve();
       this.adapter = this.makeAdapter();
     }
@@ -296,7 +298,9 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
               } catch (e) { born = f.lastModified; }
               self.agentBorn.set(`${dir}/${id}/${aid}`, born);
             }
-            out.push({ id: aid, mtime: f.lastModified, born, info });
+            // a finished subagent may have left background commands running (see core.openBg)
+            const bgRunning = info.finished ? await self.bgRunningOf(`${dir}/${id}/${aid}`, f) : 0;
+            out.push({ id: aid, mtime: f.lastModified, born, info, bgRunning });
           });
           return out;
         },
@@ -399,6 +403,33 @@ const forgetMeta = () => idb('meta', 'readwrite', (s) => s.delete('projects')).c
     }
     async forgetDataFolder() { await forgetData(); this.dataRoot = this.dataPending = null; }
     async forgetTmpFolder() { await forgetTmp(); this.tmpRoot = this.tmpPending = null; this.tasksDirs = new Map(); }
+    // How many background commands a finished subagent left still running; same rules as the server. Without the
+    // temp folder connected the output files can't be read, so only notifications, stops and timeouts end one.
+    async bgRunningOf(key, f) {
+      const sig = `${f.size}:${f.lastModified}`;
+      let c = this.bgScans.get(key);
+      if (!c || c.sig !== sig) {
+        let text = '';
+        try { text = await f.text(); } catch (e) { /* vanished */ }
+        c = { sig, open: core.openBg(text) };
+        this.bgScans.set(key, c);
+      }
+      return core.bgRunning(c.open, Date.now(), async (o) => {
+        if (!o.sid || !this.tmpRoot) return null;
+        const k = `${o.sid}/${o.task}`;
+        if (this.bgEnded.has(k)) return true;
+        try {
+          const dirs = this.tasksDirs || (this.tasksDirs = new Map());
+          let dir = dirs.get(o.sid);
+          if (!dir) { dir = await core.locateTasks(this.tmpRoot, o.sid); if (dir) dirs.set(o.sid, dir); }
+          if (!dir) return null;
+          const out = await (await dir.getFileHandle(o.task + '.output')).getFile();
+          const ended = core.exitedText(await out.slice(Math.max(0, out.size - 256)).text());
+          if (ended) this.bgEnded.add(k);
+          return ended;
+        } catch (e) { return e && e.name === 'NotFoundError' ? true : null; }
+      });
+    }
     // same answer as the server's /api/task; { unsupported, need } until the temp folder is connected
     async task(ref, task, since) {
       if (!this.tmpRoot) return { unsupported: true, need: this.tmpState };
