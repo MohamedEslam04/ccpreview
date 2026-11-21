@@ -2313,7 +2313,7 @@ class Pane {
   renderInfo() {
     const box = this.q('.pinfo');
     if (!box || box.hidden) return;
-    box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo, this.git);
+    box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo, this.git, this.key);
     this.loadGit();
   }
   loadGit() {
@@ -2327,7 +2327,7 @@ class Pane {
       if (this.key !== k) return;
       this.git = g || { failed: true };
       const box = this.q('.pinfo');
-      if (box && !box.hidden) box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo, this.git);
+      if (box && !box.hidden) box.innerHTML = infoHtml(this.stats, this.agentInfo, this.sessInfo, this.git, this.key);
     });
   }
   onInfoClick(e) {
@@ -2798,7 +2798,7 @@ function statSummary(st) {
   else if (tk.all) parts.push(t('info.tokens_n', { n: fmtTok(tk.all) }));
   return parts.join(' · ');
 }
-function infoHtml(st, agent, sess, g) {
+function infoHtml(st, agent, sess, g, key) {
   const tk = tokenTotals(st), models = modelCounts(st);
   const row = (k, v) => `<div class="ii"><div class="ik">${k}</div><div class="iv">${v}</div></div>`;
   const chip = (txt, tip) => `<span class="ichip"${tip ? ` title="${esc(t(tip))}"` : ''}>${txt}</span>`;
@@ -2826,6 +2826,10 @@ function infoHtml(st, agent, sess, g) {
       `${chip(t('info.tok_cr', { n: fmtTok(tk.cr) }), 'info.tok_cr_tip')}${chip(t('info.tok_cw', { n: fmtTok(tk.cw) }), 'info.tok_cw_tip')} <small>${tn('info.requests', st.msgs.size, { n: num(st.msgs.size) })}</small>` +
       `<small style="width:100%">${t('info.tokens_note')}</small>`
     : '—');
+  // the ids `claude --resume <id>` and the transcript file names use; a subagent also shows its own
+  // (from the pane itself: a session not in the loaded list still has them)
+  if (key && key.id) h += row(t('info.session_id'), path(key.id));
+  if (key && key.agent) h += row(t('info.agent_id'), path(key.agent));
   const dir = (agent && agent.worktree) || st.cwd;
   h += row(t('info.folder'), dir ? path(dir) : '—');
   // the git row already names the branch; keep this row when the session moved between branches
